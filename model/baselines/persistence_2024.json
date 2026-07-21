@@ -1,0 +1,12 @@
+{
+  "metric_version": "gaussian_nll_v1",
+  "task": "regression_with_uncertainty",
+  "prediction": "mean=0, var=norm_return_var (1.0185)",
+  "split": "val-eval",
+  "nll": 0.507770,
+  "n_samples": 87769,
+  "window_length": 60,
+  "horizon": 12,
+  "date_computed": "2026-07-21",
+  "method": "persistence: mean=0, variance=unconditional norm_return variance (computed over val-eval split).  norm_return = log_return / realized_vol has variance~1, so realized_vol is not the right variance scale. NLL is mean over batch AND horizon \u2014 each prediction contributes equally. No clamping needed because the unconditional variance is always well-behaved."
+}

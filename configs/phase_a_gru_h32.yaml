@@ -1,0 +1,37 @@
+# Phase A run config — GRU encoder, hidden=32, dropout=0.2
+# Variant: reduced capacity after diagnostic showed stride=60 val NLL
+# worse than baseline (0.5867 vs 0.5078) on 17-epoch local run.
+# GRUEncoder defaults changed: hidden_size 64→32, dropout 0.1→0.2
+# (params drop from 16,152 → 5,016).
+# Baseline comparison: phaseA_20260721_081958 (hidden=64, drop=0.1, 18 epochs,
+# best val NLL 0.4942 at epoch 0, baseline_delta -0.0135).
+#
+# Usage: python -m model.train --config configs/phase_a_gru_h32.yaml --smoke-test-first
+
+phase: "A"
+window_length: 60
+horizon: 12
+horizon_weighting: "uniform"
+feature_columns:
+  - cvd
+  - cvd_quote
+  - vwap_20
+  - vwap_50
+  - anchored_vwap
+  - realized_vol
+  - log_return
+  - norm_return
+  - return_pct
+  - vol_profile_low_bucket
+split_config_ref: "model/config/splits.py"
+active_split: "train"
+
+batch_size: 256
+learning_rate: 0.001
+optimizer: "adam"
+num_epochs: 30
+seed: 42
+
+model_class: "model.body.gru_encoder.GRUEncoder"
+run_name: ""          # auto-generated if empty
+notes: "GRU h32 d20 — 5K params, capacity reduction from h64 (16K) following stride-val diagnostic showing generalization failure at h64."

@@ -1,0 +1,29 @@
+# Example run config — Phase A regression, 1-minute bars
+# Usage: python -m model.train --config configs/example.yaml
+
+phase: "A"
+window_length: 60
+horizon: 12
+feature_columns:
+  - cvd
+  - cvd_quote
+  - vwap_20
+  - vwap_50
+  - anchored_vwap
+  - realized_vol
+  - log_return
+  - norm_return
+  - return_pct
+  - vol_profile_low_bucket
+split_config_ref: "model/config/splits.py"
+active_split: "train"
+
+batch_size: 256
+learning_rate: 0.001
+optimizer: "adam"
+num_epochs: 50
+seed: 42
+
+model_class: "model.body.simple_mlp.SimpleMLP"
+run_name: ""          # auto-generated if empty
+notes: "Phase A baseline — 10 features, 60-bar window, 12-step horizon"

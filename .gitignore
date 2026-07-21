@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+.env
+
+# Data (downloaded/generated)
+data/raw/binance/
+data/raw/parquet/
+data/processed/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Virtual env
+venv/
+.venv/
+*.egg
+
+# Node
+node_modules/
+ui/frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Tool-specific
+.opencode/
+
+# Logs
+*.log
+_backend.log
+_backend_err.log
+
+# Colab tarballs
+*.tar.gz
+
+# Training outputs
+model/checkpoints/latest.json
+model/runs/
+
+# Sample data
+sample/
+
+# Test artifacts
+.pytest_cache/
+.benchmarks/
