@@ -102,8 +102,12 @@ def _build_model(checkpoint_path: Path, device: torch.device) -> torch.nn.Module
     # Load state dict manually to handle _orig_mod. prefix from torch.compile
     raw_ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = raw_ckpt["model_state_dict"]
+    # Strip _orig_mod. prefix from torch.compile-wrapped checkpoints
     if any(k.startswith("_orig_mod.") for k in state_dict):
-        state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+        state_dict = {k.removeprefix("_orig_mod."): v for k, v in state_dict.items()}
+    # Strip encoder. prefix from DistributedDataParallel / wrapper checkpoints
+    if any(k.startswith("encoder.") for k in state_dict):
+        state_dict = {k.removeprefix("encoder."): v for k, v in state_dict.items()}
 
     model.load_state_dict(state_dict)
     logger.info("Loaded model state dict from %s", checkpoint_path)

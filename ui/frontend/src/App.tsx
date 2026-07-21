@@ -4,6 +4,7 @@ import { fetchSeries, fetchInferenceRange, fetchInferenceDetail } from './api'
 import PriceChart from './components/PriceChart'
 import InfoPanel from './components/InfoPanel'
 import Scrubber from './components/Scrubber'
+import CheckpointSelector from './components/CheckpointSelector'
 
 export default function App() {
   const [bars, setBars] = useState<Bar[]>([])
@@ -14,6 +15,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [detailTs, setDetailTs] = useState<string | null>(null)
   const [detail, setDetail] = useState<InferenceResult | null>(null)
+  const [activeRunName, setActiveRunName] = useState<string | null>(null)
   const fetchIdRef = useRef(0)
 
   const loadData = useCallback(() => {
@@ -36,6 +38,11 @@ export default function App() {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  const handleCheckpointChanged = useCallback(() => {
+    setActiveRunName(null)
+    loadData()
+  }, [loadData])
 
   useEffect(() => {
     loadData()
@@ -167,6 +174,10 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1>Teacher Model — Replay</h1>
+        <CheckpointSelector
+          activeRunName={activeRunName}
+          onCheckpointChanged={handleCheckpointChanged}
+        />
         <span className="toolbar-info">
           {bars.length} bars loaded &middot; {inferences.length} visible
         </span>

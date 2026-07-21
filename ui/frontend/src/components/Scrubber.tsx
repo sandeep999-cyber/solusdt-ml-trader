@@ -3,6 +3,11 @@ import type { InferenceResult } from '../types'
 
 const SPEEDS = [0, 1, 5, 20]
 
+function formatTimestamp(ts: string): string {
+  if (ts.length < 19) return ts
+  return `${ts.slice(5, 10)} ${ts.slice(11, 19)}`
+}
+
 interface Props {
   inferences: InferenceResult[]
   cursorTimestamp: string | null
@@ -40,6 +45,11 @@ export default function Scrubber({
   const effectiveIndex = dragIndex ?? cursorIndex
   effectiveIndexRef.current = effectiveIndex
   const fillPct = maxIdx > 0 ? (effectiveIndex / maxIdx) * 100 : 0
+
+  const displayTimestamp =
+    effectiveIndex >= 0 && effectiveIndex < inferences.length
+      ? inferences[effectiveIndex].timestamp
+      : cursorTimestamp
 
   // Window-level mouseup to catch releases outside the slider element
   useEffect(() => {
@@ -109,7 +119,7 @@ export default function Scrubber({
         <button
           className="scrub-btn"
           onClick={handlePrev}
-          disabled={cursorIndex <= 0}
+          disabled={effectiveIndex <= 0}
           title="Previous bar (←)"
         >
           ◀
@@ -124,11 +134,12 @@ export default function Scrubber({
         <button
           className="scrub-btn"
           onClick={handleNext}
-          disabled={cursorIndex >= maxIdx}
+          disabled={effectiveIndex >= maxIdx}
           title="Next bar (→)"
         >
           ▶
         </button>
+        <span className="speed-label">Speed</span>
         <div className="speed-selector">
           {SPEEDS.map(s => (
             <button
@@ -159,7 +170,7 @@ export default function Scrubber({
           {effectiveIndex >= 0 ? `${effectiveIndex + 1} / ${inferences.length}` : '—'}
         </span>
         <span className="timestamp-info">
-          {cursorTimestamp ?? '—'}
+          {displayTimestamp ? formatTimestamp(displayTimestamp) : '—'}
         </span>
       </div>
     </div>

@@ -48,3 +48,35 @@ export interface InferenceRangeResponse {
   results: InferenceResult[]
   all_decisions: DecisionEntry[]
 }
+
+export interface CheckpointEntry {
+  run_name: string
+  is_smoketest: boolean
+  has_best_pt: boolean
+  metrics: {
+    epoch?: number
+    nll?: number
+    mse?: number
+    baseline_delta?: number
+    baseline_loss?: number
+    train_loss?: number
+  } | null
+  config: {
+    model_class?: string
+    notes?: string
+    num_epochs?: number
+  }
+}
+
+export interface CheckpointListResponse {
+  checkpoints: CheckpointEntry[]
+}
+
+export interface CheckpointSelectResponse {
+  selected: string
+  checkpoint: {
+    run_name: string
+    checkpoint_path: string
+    updated: string
+  }
+}
