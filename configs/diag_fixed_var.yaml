@@ -1,0 +1,34 @@
+# Diagnostic: fixed variance (log_var=0) — is the flat mean an optimization
+# pathology or a genuine ceiling?
+#
+# Forces variance to 1.0 so loss = MSE/2. If MSE drops well below ~1.018,
+# the flat mean in full-NLL training was a variance-shortcut artifact.
+# Usage: python -m model.train --config configs/diag_fixed_var.yaml
+
+phase: "A"
+window_length: 60
+horizon: 12
+horizon_weighting: "uniform"
+feature_columns:
+  - cvd
+  - cvd_quote
+  - vwap_20
+  - vwap_50
+  - anchored_vwap
+  - realized_vol
+  - log_return
+  - norm_return
+  - return_pct
+  - vol_profile_low_bucket
+split_config_ref: "model/config/splits.py"
+active_split: "train"
+
+batch_size: 256
+learning_rate: 0.001
+optimizer: "adam"
+num_epochs: 15
+seed: 42
+
+model_class: "model.body.gru_encoder_fixed_var.GRUEncoderFixedVar"
+run_name: ""
+notes: "DIAGNOSTIC: GRU h32 d20 with fixed var=1 (MSE loss). Tests whether the flat-mean ceiling is a variance-shortcut pathology."
