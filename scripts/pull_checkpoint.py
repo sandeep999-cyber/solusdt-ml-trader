@@ -21,6 +21,7 @@ RUNS_DIR = PROJECT_ROOT / "model" / "runs"
 POINTER_PATH = PROJECT_ROOT / "model" / "checkpoints" / "latest.json"
 
 DRIVE_CANDIDATES = [
+    Path("G:/My Drive/ModelProject/checkpoints"),
     Path("G:/MyDrive/ModelProject/checkpoints"),
     Path.home() / "Google Drive/MyDrive/ModelProject/checkpoints",
     Path.home() / "Library/CloudStorage/GoogleDrive-*/MyDrive/ModelProject/checkpoints",
