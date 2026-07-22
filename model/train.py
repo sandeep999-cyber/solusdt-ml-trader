@@ -186,7 +186,7 @@ def _validate_config(config: RunConfig) -> None:
     if not feat_dir.exists():
         errors.append(f"processed_dir not found: {feat_dir}")
     else:
-        parquet_files = sorted(feat_dir.glob("*.parquet"))
+        parquet_files = sorted(feat_dir.glob("**/*.parquet"))
         if not parquet_files:
             errors.append(f"no .parquet files found in {feat_dir}")
         else:
