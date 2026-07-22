@@ -1,11 +1,11 @@
-"""Sync latest Colab-trained checkpoint from Google Drive to local UI.
+"""Sync Colab-trained checkpoints + metrics from Google Drive to local.
+
+Syncs every run's best.pt, metrics.jsonl, and config.yaml from Drive to
+model/runs/<run_name>/, then sets the latest pointer for the UI.
 
 Usage:
-    python scripts/pull_checkpoint.py                          # auto-detect Drive path
-    python scripts/pull_checkpoint.py D:/path/to/best.pt       # manual file
-    python scripts/pull_checkpoint.py --run-name phaseA_xxx    # from model/runs/ (already local)
-
-Auto-detection searches common Drive for Desktop locations.
+    python scripts/pull_checkpoint.py                          # auto-detect Drive
+    python scripts/pull_checkpoint.py D:/path/to/checkpoints   # manual Drive path
 """
 
 from __future__ import annotations
@@ -20,30 +20,115 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = PROJECT_ROOT / "model" / "runs"
 POINTER_PATH = PROJECT_ROOT / "model" / "checkpoints" / "latest.json"
 
-# Common Google Drive for Desktop sync paths
 DRIVE_CANDIDATES = [
     Path("G:/MyDrive/ModelProject/checkpoints"),
-    Path("G:/.shortcut-targets-by-id/1aK8bWx9ZcQrXyZ/ModelProject/checkpoints"),
     Path.home() / "Google Drive/MyDrive/ModelProject/checkpoints",
-    Path.home() / "Library/CloudStorage/GoogleDrive-sandeepchanda119@gmail.com/MyDrive/ModelProject/checkpoints",
+    Path.home() / "Library/CloudStorage/GoogleDrive-*/MyDrive/ModelProject/checkpoints",
 ]
 
 
-def _find_drive_folder() -> Path | None:
+def _find_drive_folder(custom: str | None = None) -> Path | None:
+    if custom:
+        p = Path(custom)
+        return p if p.exists() else None
     for p in DRIVE_CANDIDATES:
+        # Handle glob pattern in candidate paths
+        parts = list(p.parts)
+        if "*" in str(p):
+            from glob import glob
+            matches = glob(str(p))
+            if matches:
+                return Path(matches[0])
         if p.exists():
             return p
     return None
 
 
-def _copy_checkpoint(src: Path, run_name: str) -> None:
-    run_dir = RUNS_DIR / run_name
-    ckpt_dir = run_dir / "checkpoints"
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
+def _sync_run(run_dir: Path, drive_dir: Path) -> None:
+    """Sync one run from Drive to local runs directory."""
+    run_name = run_dir.name
+    local_run = RUNS_DIR / run_name
+    local_ckpt = local_run / "checkpoints"
+    local_ckpt.mkdir(parents=True, exist_ok=True)
 
-    dest = ckpt_dir / "best.pt"
-    shutil.copy2(src, dest)
-    print(f"Copied {src} -> {dest}")
+    # best.pt
+    src = run_dir / "best.pt"
+    if src.exists():
+        dst = local_ckpt / "best.pt"
+        shutil.copy2(src, dst)
+        print(f"  ✓ best.pt")
+
+    # metrics.jsonl
+    src_metrics = drive_dir / f"{run_name}_metrics.jsonl"
+    if src_metrics.exists():
+        dst_metrics = local_run / "metrics.jsonl"
+        shutil.copy2(src_metrics, dst_metrics)
+        print(f"  ✓ metrics.jsonl")
+
+    # config.yaml
+    src_config = drive_dir / f"{run_name}_config.yaml"
+    if src_config.exists():
+        dst_config = local_run / "config.yaml"
+        shutil.copy2(src_config, dst_config)
+        print(f"  ✓ config.yaml")
+
+
+def sync_from_drive(drive_path: str | None = None) -> None:
+    drive = _find_drive_folder(drive_path)
+    if drive is None:
+        print(
+            "Drive checkpoints folder not found. Either:\n"
+            "  1. Set up Google Drive for Desktop and sync MyDrive/ModelProject/checkpoints/\n"
+            "  2. Pass the path manually:\n"
+            "       python scripts/pull_checkpoint.py D:/path/to/checkpoints",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Drive folder: {drive}")
+
+    # Discover all run checkpoints (files named <run_name>_best.pt)
+    synced = []
+    for f in sorted(drive.glob("*_best.pt")):
+        run_name = f.stem.replace("_best", "")
+        print(f"Syncing {run_name}...")
+        _sync_run(Path(run_name), drive)
+        synced.append(run_name)
+
+    if not synced:
+        # Fallback: single best.pt from the Colab notebook
+        pointer_path = drive / "latest.json"
+        if pointer_path.exists():
+            pointer = json.loads(pointer_path.read_text())
+            run_name = pointer.get("run_name", "colab_run")
+            print(f"Syncing {run_name} (from latest.json)...")
+            src = drive / "best.pt"
+            if src.exists():
+                local_run = RUNS_DIR / run_name
+                local_ckpt = local_run / "checkpoints"
+                local_ckpt.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, local_ckpt / "best.pt")
+                print(f"  ✓ best.pt")
+                synced.append(run_name)
+
+    if not synced:
+        print(f"No checkpoints found in {drive}", file=sys.stderr)
+        sys.exit(1)
+
+    # Update pointer to latest run
+    latest = synced[-1]
+    _update_pointer(latest)
+    print(f"\nLatest run: {latest}")
+    print(f"Total runs synced: {len(synced)}")
+
+    # Print summary
+    for name in synced:
+        metrics_path = RUNS_DIR / name / "metrics.jsonl"
+        if metrics_path.exists():
+            with open(metrics_path) as f:
+                lines = f.readlines()
+            last = json.loads(lines[-1]) if lines else {}
+            print(f"  {name}: mse={last.get('mse', '?')}  loss={last.get('loss', '?')}  epochs={last.get('epoch', '?')}")
 
 
 def _update_pointer(run_name: str) -> None:
@@ -54,73 +139,12 @@ def _update_pointer(run_name: str) -> None:
     }
     POINTER_PATH.parent.mkdir(parents=True, exist_ok=True)
     POINTER_PATH.write_text(json.dumps(pointer, indent=2))
-    print(f"Updated {POINTER_PATH}")
-    print(f"  -> UI will hot-reload within 5s on next request")
-
-
-def from_manual(path_arg: str) -> None:
-    src = Path(path_arg)
-    if not src.exists():
-        print(f"File not found: {src}", file=sys.stderr)
-        sys.exit(1)
-    run_name = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    _copy_checkpoint(src, run_name)
-    _update_pointer(run_name)
-    print("Done. Restart the UI server or wait 5s for hot-reload.")
-
-
-def from_drive() -> None:
-    drive = _find_drive_folder()
-    if drive is None:
-        print(
-            "Google Drive sync folder not found at any expected path.\n"
-            "Either:\n"
-            "  1. Install Google Drive for Desktop and sync ModelProject/checkpoints/\n"
-            "  2. Pass the checkpoint path manually:\n"
-            "     python scripts/pull_checkpoint.py D:/path/to/best.pt",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # Read the pointer file from Drive to get the latest run name
-    pointer_path = drive / "latest.json"
-    if pointer_path.exists():
-        pointer = json.loads(pointer_path.read_text())
-        run_name = pointer.get("run_name", "drive_sync")
-    else:
-        run_name = "drive_sync"
-
-    best_path = drive / f"{run_name}_best.pt"
-    if not best_path.exists():
-        best_path = drive / "best.pt"
-    if not best_path.exists():
-        print(f"No checkpoint found in {drive}", file=sys.stderr)
-        sys.exit(1)
-
-    _copy_checkpoint(best_path, run_name)
-    _update_pointer(run_name)
-    print("Done. Restart the UI server or wait 5s for hot-reload.")
-
-
-def from_local_run(run_name: str) -> None:
-    ckpt = RUNS_DIR / run_name / "checkpoints" / "best.pt"
-    if not ckpt.exists():
-        print(f"Checkpoint not found: {ckpt}", file=sys.stderr)
-        sys.exit(1)
-    _update_pointer(run_name)
-    print("Done. Restart the UI server or wait 5s for hot-reload.")
+    print(f"\nPointer -> {run_name}")
 
 
 def main() -> None:
-    if len(sys.argv) == 1:
-        from_drive()
-    elif sys.argv[1] == "--run-name":
-        if len(sys.argv) < 3:
-            print("Usage: python scripts/pull_checkpoint.py --run-name <name>", file=sys.stderr)
-            sys.exit(1)
-        from_local_run(sys.argv[2])
-    else:
-        from_manual(sys.argv[1])
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    sync_from_drive(path)
 
 
 if __name__ == "__main__":
