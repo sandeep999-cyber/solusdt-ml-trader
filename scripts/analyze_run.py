@@ -48,11 +48,21 @@ def _load_metrics(run_dir: Path) -> list[dict]:
 
 def _load_config(run_dir: Path) -> dict:
     path = run_dir / "config.yaml"
-    if not path.exists():
-        return {}
-    import yaml
-    with open(path) as f:
-        return yaml.safe_load(f)
+    if path.exists():
+        import yaml
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    # Fallback: config embedded in checkpoint
+    best = run_dir / "checkpoints" / "best.pt"
+    if best.exists():
+        import torch
+        ckpt = torch.load(best, map_location="cpu", weights_only=True)
+        raw = ckpt.get("config")
+        if isinstance(raw, str):
+            return json.loads(raw)
+        if isinstance(raw, dict):
+            return raw
+    return {}
 
 
 def _find_run(run_name: str | None) -> Path:
