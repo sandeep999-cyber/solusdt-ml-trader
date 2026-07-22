@@ -5,10 +5,12 @@ Expects Drive layout (written by Colab Cell 7):
         <run_name>_best.pt
         <run_name>_metrics.jsonl
         <run_name>_config.yaml
+        <run_name>_summary.md
         best.pt
         latest.json
 
 Syncs into model/runs/<run_name>/ and updates model/checkpoints/latest.json.
+Also appends to experiments.md when a new summary is found.
 
 Usage:
     python scripts/pull_checkpoint.py
@@ -26,6 +28,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = PROJECT_ROOT / "model" / "runs"
 POINTER_PATH = PROJECT_ROOT / "model" / "checkpoints" / "latest.json"
+EXPERIMENTS_PATH = PROJECT_ROOT / "experiments.md"
 
 DRIVE_CANDIDATES = [
     Path("G:/My Drive/ModelProject/checkpoints"),
@@ -55,24 +58,83 @@ def _sync_run(run_name: str, drive_dir: Path) -> bool:
     src_best = drive_dir / f"{run_name}_best.pt"
     if src_best.exists():
         shutil.copy2(src_best, local_ckpt / "best.pt")
-        print(f"  ✓ best.pt")
+        print("  [OK] best.pt")
         copied = True
 
     src_metrics = drive_dir / f"{run_name}_metrics.jsonl"
     if src_metrics.exists():
         shutil.copy2(src_metrics, local_run / "metrics.jsonl")
-        print(f"  ✓ metrics.jsonl")
+        print("  [OK] metrics.jsonl")
         copied = True
 
     src_config = drive_dir / f"{run_name}_config.yaml"
     if src_config.exists():
         shutil.copy2(src_config, local_run / "config.yaml")
-        print(f"  ✓ config.yaml")
+        print("  [OK] config.yaml")
+        copied = True
+
+    src_summary = drive_dir / f"{run_name}_summary.md"
+    if src_summary.exists():
+        shutil.copy2(src_summary, local_run / "summary.md")
+        print("  [OK] summary.md")
         copied = True
 
     if not copied:
         print(f"  (no files found for {run_name})")
     return copied
+
+
+def _append_experiments(run_name: str) -> None:
+    """Append a short entry to experiments.md if not already present."""
+    summary_path = RUNS_DIR / run_name / "summary.md"
+    metrics_path = RUNS_DIR / run_name / "metrics.jsonl"
+    if not summary_path.exists():
+        return
+
+    section_header = f"## {run_name}"
+    if EXPERIMENTS_PATH.exists():
+        existing = EXPERIMENTS_PATH.read_text()
+        if section_header in existing:
+            return  # already logged
+
+    # Gather data
+    summary_text = summary_path.read_text().strip()
+    metrics_lines = []
+    if metrics_path.exists():
+        with open(metrics_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    metrics_lines.append(json.loads(line))
+
+    # Build entry
+    entry = [f"\n{section_header}"]
+    entry.append(f"- **pulled:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    entry.append("")
+
+    # Extract first few lines of summary for quick view
+    for line in summary_text.split("\n"):
+        entry.append(line)
+
+    entry.append("")
+
+    result_line = "no data"
+    if metrics_lines:
+        last = metrics_lines[-1]
+        best = min(metrics_lines, key=lambda m: m.get("loss", float("inf")))
+        result_line = (
+            f"best_loss={best.get('loss','?'):.6f} (epoch {best.get('epoch','?')}) "
+            f"| final_loss={last.get('loss','?'):.6f} "
+            f"| mse={last.get('mse','?'):.6f} "
+            f"| var_mean={last.get('var_mean','?'):.4f}"
+        )
+    entry.append(f"> {result_line}")
+    entry.append("")
+
+    with open(EXPERIMENTS_PATH, "a") as f:
+        f.write("\n".join(entry) + "\n")
+
+    print(f"  [OK] experiments.md: added {run_name}")
 
 
 def sync_from_drive(drive_path: str | None = None) -> None:
@@ -89,16 +151,14 @@ def sync_from_drive(drive_path: str | None = None) -> None:
 
     print(f"Drive folder: {drive}")
 
-    # Discover runs from <run_name>_best.pt files
     synced: list[str] = []
     for f in sorted(drive.glob("*_best.pt")):
-        # stem = "phaseA_xxx_best" → run_name = "phaseA_xxx"
         run_name = f.name[: -len("_best.pt")]
         print(f"Syncing {run_name}...")
         if _sync_run(run_name, drive):
             synced.append(run_name)
 
-    # Fallback: plain best.pt + latest.json (older Colab runs)
+    # Fallback: plain best.pt + latest.json
     if not synced:
         pointer_path = drive / "latest.json"
         src = drive / "best.pt"
@@ -110,8 +170,7 @@ def sync_from_drive(drive_path: str | None = None) -> None:
             local_ckpt = local_run / "checkpoints"
             local_ckpt.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, local_ckpt / "best.pt")
-            print("  ✓ best.pt")
-            # Also try metrics/config under that name
+            print("  [OK] best.pt")
             _sync_run(run_name, drive)
             synced.append(run_name)
 
@@ -119,7 +178,6 @@ def sync_from_drive(drive_path: str | None = None) -> None:
         print(f"No checkpoints found in {drive}", file=sys.stderr)
         sys.exit(1)
 
-    # Prefer Drive's latest.json if present; else last sorted name
     pointer_path = drive / "latest.json"
     if pointer_path.exists():
         try:
@@ -145,6 +203,10 @@ def sync_from_drive(drive_path: str | None = None) -> None:
                 f"  {name}: mse={last.get('mse', '?')}  "
                 f"loss={last.get('loss', '?')}  epochs={last.get('epoch', '?')}"
             )
+
+    # Append to experiment journal
+    for name in synced:
+        _append_experiments(name)
 
 
 def _update_pointer(run_name: str) -> None:

@@ -11,6 +11,9 @@ import argparse
 import importlib
 import json
 import logging
+import os
+import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -26,11 +29,28 @@ from model.checkpoints.load import load_checkpoint
 from model.config.run_config import RunConfig
 from model.data.loader import create_dataloader
 from model.inference.contract_version import CONTRACT_VERSION
+from model.reporting.summary import build_summary
 
 logger = logging.getLogger(__name__)
 
 BASELINE_PATH = Path("model/baselines/persistence_2024.json")
 LATEST_POINTER_PATH = Path("model/checkpoints/latest.json")
+
+
+def _git_commit() -> str:
+    env = os.environ.get("GIT_COMMIT")
+    if env:
+        return env.strip()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return "unknown"
 
 
 def _load_baseline() -> Optional[dict[str, Any]]:
@@ -51,6 +71,45 @@ def _update_latest_pointer(run_name: str, checkpoint_path: Path) -> None:
     with open(LATEST_POINTER_PATH, "w") as f:
         json.dump(data, f, indent=2)
     logger.info("Updated latest pointer -> %s", checkpoint_path)
+
+
+def _mirror_to_drive(
+    run_dir: Path,
+    run_name: str,
+    val_metrics: dict[str, float],
+    is_best: bool,
+    drive_dir: Path,
+) -> None:
+    """Copy best checkpoint + metrics + config to Drive mid-run."""
+    drive_dir = Path(drive_dir)
+    drive_dir.mkdir(parents=True, exist_ok=True)
+
+    best_src = run_dir / "checkpoints" / "best.pt"
+    if is_best and best_src.exists():
+        shutil.copy2(best_src, drive_dir / f"{run_name}_best.pt")
+        shutil.copy2(best_src, drive_dir / "best.pt")
+        logger.info("Mirrored best.pt to Drive")
+
+    metrics_src = run_dir / "metrics.jsonl"
+    if metrics_src.exists():
+        shutil.copy2(metrics_src, drive_dir / f"{run_name}_metrics.jsonl")
+
+    config_src = run_dir / "config.yaml"
+    config_dst = drive_dir / f"{run_name}_config.yaml"
+    if config_src.exists() and not config_dst.exists():
+        shutil.copy2(config_src, config_dst)
+
+    summary_src = run_dir / "summary.md"
+    if summary_src.exists():
+        shutil.copy2(summary_src, drive_dir / f"{run_name}_summary.md")
+
+    pointer = {
+        "run_name": run_name,
+        "checkpoint_path": str(drive_dir / f"{run_name}_best.pt"),
+        "updated": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(drive_dir / "latest.json", "w") as f:
+        json.dump(pointer, f, indent=2)
 
 
 def _restore_best_val_loss(metrics_path: Path) -> float:
@@ -122,6 +181,11 @@ def _save_checkpoint(
     if not smoke_test:
         pointer_path = (ckpt_dir / "best.pt") if is_best else path
         _update_latest_pointer(config.run_name, pointer_path)
+
+    # Mid-run Drive mirror (env var set by Colab notebook)
+    drive_dir = os.environ.get("DRIVE_CKPT_DIR")
+    if drive_dir and not smoke_test:
+        _mirror_to_drive(run_dir, config.run_name, val_metrics, is_best, drive_dir)
     return path
 
 
@@ -301,6 +365,7 @@ def train(config_path: str, smoke_test: bool = False) -> None:
     val_loader = create_dataloader(config, split="val", shuffle=False, device=device)
 
     # Data provenance for run/checkpoint metadata
+    git_commit = _git_commit()
     train_df = train_loader.dataset.df
     data_meta = {
         "data_version": _read_data_version(config),
@@ -308,12 +373,23 @@ def train(config_path: str, smoke_test: bool = False) -> None:
         "train_rows": len(train_df),
         "train_start": str(train_df["timestamp"].min()),
         "train_end": str(train_df["timestamp"].max()),
+        "git_commit": git_commit,
     }
     logger.info(
-        "Data: version=%s, train rows=%d (%s -> %s)",
+        "Data: version=%s, train rows=%d (%s -> %s), git=%s",
         data_meta["data_version"], data_meta["train_rows"],
         data_meta["train_start"], data_meta["train_end"],
+        git_commit,
     )
+
+    # Write provenance file (separate from config.yaml so config stays pure hyperparams)
+    provenance = {
+        "run_name": config.run_name,
+        "git_commit": git_commit,
+        "started": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(run_dir / "provenance.json", "w") as f:
+        json.dump(provenance, f, indent=2)
 
     if smoke_test:
         # Truncate to a few batches
@@ -432,6 +508,13 @@ def train(config_path: str, smoke_test: bool = False) -> None:
             )
 
     logger.info("Training complete. Run: %s", config.run_name)
+
+    # Write summary
+    if not smoke_test:
+        summary = build_summary(run_dir, config, data_meta, git_commit)
+        with open(run_dir / "summary.md", "w") as f:
+            f.write(summary)
+        logger.info("Wrote summary.md to %s", run_dir / "summary.md")
 
 
 def _truncate_loader(loader: DataLoader, n_batches: int) -> DataLoader:
