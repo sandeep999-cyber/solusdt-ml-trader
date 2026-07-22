@@ -136,12 +136,25 @@ def create_dataloader(
     shuffle: bool = True,
     device: torch.device = torch.device("cpu"),
 ) -> DataLoader:
-    """Create a DataLoader for the given split."""
+    """Create a DataLoader for the given split.
+
+    Features/targets are fully materialized as CPU tensors in
+    CausalWindowDataset.__init__, so each __getitem__ is a cheap slice.
+    Extra workers add process/IPC overhead without helping I/O — keep
+    num_workers at 0 (or 2 max on multi-core hosts). pin_memory only
+    when the training device is CUDA.
+    """
     dataset = CausalWindowDataset(config, split=split, device=device)
+    use_cuda = isinstance(device, torch.device) and device.type == "cuda"
+    # Prefer 0 workers: in-memory slices + small model → workers slow us down.
+    # Cap at 2 if explicitly useful later; never 4 (Colab warning / oversub).
+    num_workers = 0
     return DataLoader(
         dataset,
         batch_size=config.batch_size,
         shuffle=shuffle,
         drop_last=False,
-        num_workers=4,
+        num_workers=num_workers,
+        pin_memory=use_cuda,
+        persistent_workers=False,
     )

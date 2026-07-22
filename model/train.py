@@ -217,8 +217,9 @@ def _validate(
 
     with torch.no_grad():
         for windows, targets in val_loader:
-            windows = windows.to(device)
-            targets = targets.to(device)
+            non_blocking = device.type == "cuda"
+            windows = windows.to(device, non_blocking=non_blocking)
+            targets = targets.to(device, non_blocking=non_blocking)
 
             outputs = model(windows)
             loss, sub_metrics = model.compute_loss(outputs, targets, config)
@@ -373,8 +374,9 @@ def train(config_path: str, smoke_test: bool = False) -> None:
         t0 = time.time()
 
         for batch_idx, (windows, targets) in enumerate(train_loader):
-            windows = windows.to(device)
-            targets = targets.to(device)
+            non_blocking = device.type == "cuda"
+            windows = windows.to(device, non_blocking=non_blocking)
+            targets = targets.to(device, non_blocking=non_blocking)
 
             optimizer.zero_grad()
             outputs = model(windows)
