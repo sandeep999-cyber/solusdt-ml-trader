@@ -186,14 +186,18 @@ def _validate_config(config: RunConfig) -> None:
     if not feat_dir.exists():
         errors.append(f"processed_dir not found: {feat_dir}")
     else:
-        schema_names = set(pq.ParquetDataset(feat_dir).schema.names)
-        required = set(config.feature_columns) | {"timestamp", "norm_return"}
-        missing = sorted(required - schema_names)
-        if missing:
-            errors.append(
-                f"columns not found in {feat_dir}: {missing}. "
-                "Check feature_columns against the processed dataset schema."
-            )
+        parquet_files = sorted(feat_dir.glob("*.parquet"))
+        if not parquet_files:
+            errors.append(f"no .parquet files found in {feat_dir}")
+        else:
+            schema_names = set(pq.ParquetDataset(parquet_files).schema.names)
+            required = set(config.feature_columns) | {"timestamp", "norm_return"}
+            missing = sorted(required - schema_names)
+            if missing:
+                errors.append(
+                    f"columns not found in {feat_dir}: {missing}. "
+                    "Check feature_columns against the processed dataset schema."
+                )
 
     if errors:
         raise ValueError("Invalid run config:\n  - " + "\n  - ".join(errors))
