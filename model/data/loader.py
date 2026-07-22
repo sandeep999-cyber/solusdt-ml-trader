@@ -54,7 +54,10 @@ class CausalWindowDataset(Dataset):
         if not feat_dir.exists():
             raise FileNotFoundError(f"Processed feature directory not found: {feat_dir}")
 
-        df = pq.ParquetDataset(feat_dir).read().to_pandas()
+        parquet_files = sorted(feat_dir.glob("**/*.parquet"))
+        if not parquet_files:
+            raise FileNotFoundError(f"No .parquet files found in {feat_dir}")
+        df = pq.ParquetDataset(parquet_files).read().to_pandas()
         df = df.sort_values("timestamp").reset_index(drop=True)
         logger.info("Loaded %d rows from %s", len(df), feat_dir)
 
