@@ -8,7 +8,7 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- ~~**Training stride question**~~ — **Resolved.** Ran three configs (stride=1,15,60), all evaluated at stride=60. All three models' CIs overlap (MSE ~1.218-1.220, all +20% vs baseline). Training stride has no effect on the harm. The hypothesis that stride=1 training teaches overlap-exploitation is **refuted**. The harm is fundamental to the feature set or model architecture, not the training window construction. (Closed: 2026-07-23)
+- **Training stride question** — Bootstrap CI (D014) confirms both models are actively harmful at stride=60 (CI excludes baseline by 17%+). High per-window std (0.52) suggests regime-specific variation. This raises a question about training itself: does the model learn overlap-exploitation from stride=1 training windows, making it worse on fresh data? Close: train three configs (stride=1,15,60), all evaluated at stride=60, and compare. (Raised: 2026-07-23, experiment designed 2026-07-23)
 
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
