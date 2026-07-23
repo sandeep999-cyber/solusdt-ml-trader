@@ -137,3 +137,17 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **Conclusion:** The 10-feature set has no genuine predictive power for 12-step-ahead norm_return. The earlier "12% improvement" was wrong. The GRU isn't "too expressive" — there's nothing to learn. The features don't predict this target.
 - **Retraction:** D017 (not committed) proposed "architecture is the problem" based on the in-sample OLS result. That conclusion is retracted. The correct conclusion is that the features lack signal for this task.
 - **Code:** `scripts/linear_baseline.py` (has in-sample bug), `scripts/gd_vs_ols_clean.py` (corrected held-out comparison).
+
+## D017: Sign prediction — NULL result, features uninformative for direction
+- **Date:** 2026-07-23
+- **Context:** D016 showed 10-feature set has no power for magnitude prediction. Test: can it predict direction (sign) instead? Logistic regression on same features, same splits, stride=60.
+- **Result:**
+  - Class balance: 50.0% positive (train), 53.5% (val) — nearly balanced
+  - Majority class baseline: accuracy=0.465 (always predict negative)
+  - Lag-1 persistence baseline: accuracy=0.502
+  - Logistic regression: accuracy=0.485, AUC=0.507
+  - vs majority: +2.0%, 95% CI [-1.0%, +4.9%] — includes 0
+  - vs persistence: -1.7%, 95% CI [-5.3%, +1.9%] — includes 0
+  - Top features: all `realized_vol` at different window positions with alternating signs (noise fitting)
+- **Conclusion:** The 10-feature set has no directional information at the 12-step horizon. Neither magnitude (D016) nor direction (D017) can be predicted. The features are genuinely uninformative for this task. Next: shorter horizon, new features, or different task formulation.
+- **Code:** `scripts/sign_prediction.py`.
