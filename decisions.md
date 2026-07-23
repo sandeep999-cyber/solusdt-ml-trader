@@ -185,27 +185,42 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **Date:** 2026-07-23
 - **Context:** D017-D019 showed features are uninformative for direction. D018 diagnostic showed marginal signal in training data (train AUC 0.582). User suggested testing volatility prediction as alternative target.
 - **Target:** `sqrt(mean(squared returns over next H steps))` — realized volatility.
-- **Ridge results (stride=H, non-overlapping val):**
+- **Ridge results (stride=H, non-overlapping val, CORRECTED):**
 
 | H | Improvement | 95% CI | R² |
 |---|-------------|--------|-----|
-| 1 | +0.33% | [0.24, 0.42] | 0.006 |
+| 1 | +0.33% | [0.24, 0.42] | 0.007 |
 | 3 | +1.70% | [1.53, 1.87] | 0.034 |
 | 5 | +2.67% | [2.38, 2.96] | 0.053 |
 | 12 | **+4.85%** | **[4.25, 5.43]** | **0.095** |
 
-- **GRU vs Ridge (H=12, stride=60 val):**
+- **GRU vs Ridge (H=12, stride=60 val, CORRECTED):**
 
 | Model | RMSE | Improvement | R² |
 |-------|------|-------------|-----|
 | Baseline | 0.2517 | --- | 0.000 |
-| Ridge | 0.2232 | +11.4% | 0.068 |
-| GRU h32 | **0.2025** | **+19.6%** | **0.233** |
+| Ridge | 0.2243 | +4.85% | 0.095 |
+| GRU h32 | **0.2025** | **+19.6%** | **~0.354** |
 | GRU vs Ridge | | **+9.2%** | CI [7.5, 11.0] |
 
-- **Conclusion:** The feature set IS useful for volatility prediction. The GRU has a clear nonlinear edge over linear (9.2% improvement, CI excludes 0). R²=0.233 means the model explains 23% of variance in realized volatility — meaningful for risk management.
+- **Conclusion:** Single-split shows real but modest signal for volatility (Ridge R²=0.095). GRU shows strong nonlinear edge (+19.6%). **BUT: walk-forward (D022) shows Ridge stacked R²=-0.077.** Single-split results are not robust. GRU walk-forward still needed.
 - **Pivot decision:** Kill all direction tasks. Volatility forecasting is the new target. The features capture information about upcoming return magnitude (volatility clustering), not direction.
 - **Code:** `scripts/volatility_ridge.py`, `scripts/volatility_gru_train.py`.
+
+## D022: Metric correction + walk-forward — single-split results are not robust
+- **Date:** 2026-07-23
+- **Context:** D020 R² values used inconsistent baselines. Corrected formula: R² = 1 - (1 - improvement/100)² where improvement is % RMSE reduction. Corrected single-split R² is actually higher (Ridge 0.095, GRU ~0.354). But walk-forward (5-fold expanding window) tells a different story.
+- **Pattern of single-split reversals:** This is the THIRD time a single-split result reversed under honest evaluation:
+  1. NLL run: "beat baseline" on stride=1 → 20% harmful at stride=60
+  2. Fixed-var MSE: "tied" at stride=1 → diverged at stride=60
+  3. **Ridge volatility: +4.85% single-split → -3.76% walk-forward**
+- **Walk-forward Ridge (H=12):**
+  - Fold 1: -0.36%, Fold 2: -19.69%, Fold 3: +1.86%, Fold 4: +5.35%, Fold 5: -5.04%
+  - Stacked: RMSE=0.242, improvement=-3.76%, R²=-0.077
+  - Signal does NOT survive temporal distribution shift
+- **Implication for GRU:** The GRU's un-walk-forward-tested +19.6% / R²≈0.354 should be treated as the LEAST trustworthy number. Given the pattern of 3 reversals, expect GRU walk-forward to also evaporate or reverse.
+- **R² formula confirmed:** `improvement` = % RMSE reduction = (1 - rmse_model/rmse_baseline) * 100. Therefore R² = 1 - (rmse_model/rmse_baseline)² = 1 - (1 - improvement/100)². The squared relationship is correct.
+- **Decision:** Run GRU walk-forward next (not GARCH) — it's cheaper and determines whether there's any nonlinear edge worth comparing against an econometric baseline.
 
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23
