@@ -1,77 +1,89 @@
-# Experiment Log — SOLUSDT 1m Intraday Return Prediction
+# Experiment Log — SOLUSDT 1m Intraday Volatility Prediction
 
-Auto-populated by `scripts/pull_checkpoint.py`. Each entry is a completed training run synced from Drive.
+Auto-populated by `scripts/pull_checkpoint.py`. Each entry is a completed training run synced from Drive. Manual entries added for local experiments.
 
 ---
 
-## phaseA_20260722_101708
+## phaseA_20260722_101708 (NLL run — return trajectory)
 - **pulled:** 2026-07-22 12:03:26 UTC
-
-## Run: phaseA_20260722_101708
-
-### Metadata
-- **git commit:** ``
 - **model_class:** model.body.gru_encoder.GRUEncoder
-- **phase:** A
-- **window / horizon:** 60 / 12
-- **num_epochs:** 30
-- **learning_rate:** 0.001
-- **optimizer:** adam
-- **batch_size:** 256
-- **horizon_weighting:** uniform
-- **hidden_size:** ?
-- **notes:** GRU h32 d20 � 5K params, capacity reduction from h64 (16K) following stride-val diagnostic showing generalization failure at h64.
+- **phase:** A, **window/horizon:** 60/12, **epochs:** 30, **lr:** 0.001
+- **hidden_size:** 32, **dropout:** 0.2, **params:** 5,016
+- **target:** norm_return (return trajectory, NLL loss)
+- **Best val:** NLL=0.493065, MSE=1.015851, var_mean=1.073
+- **Baseline delta:** -0.014705 (beats 0.507770 baseline on NLL)
+- **Verdict:** MSE ≈ unconditional variance. Variance-shortcut pathology (D011).
 
-### Best checkpoint (validation)
-- **baseline_delta:** -0.014705
-- **baseline_loss:** 0.50777
-- **loss:** 0.493065
-- **mse:** 1.015851
-- **nll:** 0.493065
-- **var_mean:** 1.073431
+## phaseA_20260722_103726 (Fixed-var diagnostic)
+- **model_class:** model.body.gru_encoder_fixed_var.GRUEncoderFixedVar
+- **target:** norm_return (MSE loss, log_var=0)
+- **Best val:** MSE=1.015688
+- **Verdict:** Confirms ceiling is real. MSE cannot go below ~1.0157 with these features.
 
-### Training trajectory
+## stride_s1_control (training stride=1, evaluated at stride=60)
+- **training_stride:** 1, **val_stride:** 60
+- **Best val MSE:** 1.2189
+- **Verdict:** Active harm on non-overlapping windows (+20% vs baseline).
 
-| Epoch | ValLoss | MSE | VarMean | DeltaBL |
-|-------|---------|-----|---------|---------|
-|     0 | 0.495053 | 1.016017 | 1.115477 | -0.012717 |
-|     1 | 0.493434 | 1.015888 | 1.086688 | -0.014336 |
-|     2 | 0.494902 | 1.015911 | 1.123400 | -0.012868 |
-|     3 | 0.493512 | 1.015912 | 1.086550 | -0.014258 |
-|     4 | 0.494915 | 1.015781 | 1.125036 | -0.012855 |
-|     5 | 0.494524 | 1.015871 | 1.114699 | -0.013246 |
-|     6 | 0.493065 | 1.015851 | 1.073431 | -0.014705 |
-|     7 | 0.494663 | 1.015919 | 1.119491 | -0.013107 |
-|     8 | 0.494646 | 1.015867 | 1.107036 | -0.013124 |
-|     9 | 0.493692 | 1.015877 | 1.084745 | -0.014078 |
-|    10 | 0.493919 | 1.015889 | 1.096497 | -0.013851 |
-|    11 | 0.494782 | 1.015860 | 1.112991 | -0.012988 |
-|    12 | 0.496282 | 1.015927 | 1.143011 | -0.011488 |
-|    13 | 0.494880 | 1.015855 | 1.115464 | -0.012890 |
-|    14 | 0.495695 | 1.015899 | 1.127902 | -0.012075 |
-|    15 | 0.495281 | 1.015861 | 1.122846 | -0.012489 |
-|    16 | 0.494543 | 1.015898 | 1.099149 | -0.013227 |
-|    17 | 0.494476 | 1.015974 | 1.098268 | -0.013294 |
-|    18 | 0.495405 | 1.015915 | 1.121047 | -0.012365 |
-|    19 | 0.495682 | 1.015978 | 1.119993 | -0.012088 |
-|    20 | 0.495395 | 1.015814 | 1.120489 | -0.012375 |
-|    21 | 0.495357 | 1.015923 | 1.116658 | -0.012413 |
-|    22 | 0.494427 | 1.015846 | 1.088307 | -0.013343 |
-|    23 | 0.494996 | 1.015874 | 1.108808 | -0.012774 |
-|    24 | 0.495420 | 1.015961 | 1.113217 | -0.012350 |
-|    25 | 0.494920 | 1.015905 | 1.103240 | -0.012850 |
-|    26 | 0.495116 | 1.015905 | 1.101856 | -0.012654 |
-|    27 | 0.494863 | 1.015855 | 1.098877 | -0.012907 |
-|    28 | 0.494490 | 1.015856 | 1.087773 | -0.013280 |
-|    29 | 0.494636 | 1.015865 | 1.086955 | -0.013134 |
+## stride_s15_intermediate (training stride=15, evaluated at stride=60)
+- **training_stride:** 15, **val_stride:** 60
+- **Best val MSE:** 1.2212
+- **Verdict:** Training stride has no effect (D015).
 
-### Analysis
-- **MSE:** 1.016017 -> 1.015865 (improved by 0.000152)
-- **MSE change:** -0.01%
-- **Baseline delta:** -0.012717 -> -0.013134
-- [WARNING] Variance inflated to 1.0870 � model inflates uncertainty instead of improving mean
+## stride_s60_nonoverlap (training stride=60, evaluated at stride=60)
+- **training_stride:** 60, **val_stride:** 60
+- **Best val MSE:** 1.2211
+- **Verdict:** Identical to stride=1 and stride=15. Overlap-exploitation hypothesis refuted (D015).
+
+## Linear baseline (OLS, held-out)
+- **script:** scripts/linear_baseline.py (corrected)
+- **val_mse:** 1.241 (+1.9% vs baseline)
+- **Verdict:** In-sample artifact retracted (D016). Held-out OLS also fails.
+
+## GD-linear vs OLS vs GRU
+- **script:** scripts/gd_vs_ols_clean.py
+- **OLS val_mse:** 1.241, **GD-linear val_mse:** 1.239, **GRU val_mse:** 1.225
+- **Baseline:** 1.217
+- **Verdict:** None beat baseline on held-out data (D016).
+
+## Sign prediction (direction, H=12)
+- **script:** scripts/sign_prediction.py (corrected)
+- **Model val_acc:** 49.0%, **val_AUC:** 0.507
+- **Always-positive baseline:** 53.5% (corrected in D018)
+- **Verdict:** Model WORSE than trivial. CI [-8.6%, -0.3%]. Direction is dead.
+
+## Shorter horizon sign prediction (H=1,3,5,12)
+- **script:** scripts/shorter_horizon_sign.py
+- **Best val AUC:** H=1 (0.509) — still noise
+- **Verdict:** No horizon achieves AUC > 0.52. Features uninformative for direction (D019).
+
+## Volatility Ridge baseline (H=12)
+- **script:** scripts/volatility_ridge.py
+- **Target:** sqrt(mean(squared returns))
+- **Baseline RMSE:** 0.2517, **Model RMSE:** 0.2232
+- **Improvement:** +11.4%, CI [10.3, 12.4], **R²:** 0.068
+- **Verdict:** Real signal for volatility. Pivot confirmed (D020).
+
+## Volatility GRU h32 (H=12, 30 epochs)
+- **script:** scripts/volatility_gru_train.py
+- **Target:** sqrt(mean(squared returns)), MSE loss
+- **Baseline RMSE:** 0.2517, **GRU RMSE:** 0.2025
+- **Improvement:** +19.6%, CI [17.4, 21.7], **R²:** 0.233
+- **GRU vs Ridge:** +9.2%, CI [7.5, 11.0]
+- **Verdict:** Nonlinear edge confirmed. GRU explains 23% of volatility variance. Best epoch: 26.
 
 ---
 
-> best_loss=0.493065 (epoch 6) | final_loss=0.494636 | mse=1.015865 | var_mean=1.0870
+## Summary Table
 
+| Experiment | Task | Model | Val Metric | Baseline | Improvement | Verdict |
+|---|---|---|---|---|---|---|
+| NLL run | Return (NLL) | GRU h32 | NLL=0.493 | 0.508 | -2.9% (NLL) | Variance shortcut |
+| Fixed-var | Return (MSE) | GRU fixvar | MSE=1.016 | 1.017 | -0.01% | Ceiling real |
+| Stride=1 | Return (MSE) | GRU h32 | MSE=1.219 | 1.017 | +20% | Harmful |
+| OLS held-out | Return (MSE) | Linear | MSE=1.241 | 1.217 | +1.9% | Fails |
+| GD-linear | Return (MSE) | Linear GD | MSE=1.239 | 1.217 | +1.8% | Fails |
+| Sign pred | Direction | LR | AUC=0.507 | 0.535 | -4.5% | Dead |
+| H=1,3,5,12 | Direction | LR | AUC<0.51 | 0.50 | ~0% | Dead |
+| **Vol Ridge** | **Volatility** | **Ridge** | **RMSE=0.223** | **0.252** | **+11.4%** | **Signal** |
+| **Vol GRU** | **Volatility** | **GRU h32** | **RMSE=0.203** | **0.252** | **+19.6%** | **Strong** |

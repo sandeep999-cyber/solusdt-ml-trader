@@ -186,9 +186,12 @@ model/runs/phaseA_YYYYMMDD_HHMMSS/
 3. ~~Split strategy~~ — done: train starts 2023-01-01, val/test untouched.
 4. ~~Build the real Phase A body~~ — done: `model/body/gru_encoder.py` (GRUEncoder), 29/29 tests, smoke run passed.
 5. ~~Scaffolding audit (19 findings)~~ — done, see Resolved above.
-6. ~~Launch the first real Phase A training run~~ — done: `phaseA_20260722_101708` (val NLL 0.493065) & `phaseA_20260722_103726` (val NLL 0.491322) both beat the 0.507770 baseline.
+6. ~~Launch the first real Phase A training run~~ — done: `phaseA_20260722_101708` (NLL run) & `phaseA_20260722_103726` (fixed-var diagnostic). Both confirmed MSE ≈ unconditional variance. Variance-shortcut pathology identified and resolved (D011).
 7. ~~Build the model-backed inference engine~~ — done: `ModelInferenceEngine` in `model/inference/engine.py` integrated into `ui/backend/state.py`.
 8. ~~Loop hardening~~ — done: git commit provenance, mid-run Drive mirror, auto summary.md per run, experiments.md journal, data copy fingerprint caching. See Resolved section above.
-9. **Phase A Architecture Investigation**: The first two runs show MSE ≈ unconditional variance (~1.0185) — the GRU h32 with the 10 Phase A features has learned zero predictive signal. The variance-shortcut pathology (NLL run improved baseline delta by −2.5% purely through variance inflation to ~1.09) was confirmed by the fixed-variance diagnostic run (MSE identical at ~1.016, NLL at baseline level). Possible directions: add order-book features (currently NaN placeholders), try more complex architectures, or accept this as a feature ceiling and move to Phase B with a calibrated noise model.
-10. **UI Inspection & Trajectory Evaluation**: Run the UI scrubber (`launch.bat`) and inspect model-backed predictions, trajectory shapes, and uncertainty bounds on the 2024 val dataset.
-11. **Phase A Refinement / Phase B Design**: Evaluate Phase A architecture tweaks (window size, input features, regularization) vs proceeding to Phase B decision head and cost-aware reward.
+9. ~~Direction prediction~~ — DEAD. Logistic regression at all horizons (H=1,3,5,12) fails to beat baselines. Best AUC=0.509 (noise). Model is worse than always-positive baseline. See D017-D019.
+10. **Volatility pivot (D020)** — Target changed to `sqrt(mean(squared returns))`. GRU h32 achieves +19.6% RMSE improvement over baseline, R²=0.233, beats linear Ridge by +9.2% (CI [7.5, 11.0]). Nonlinear edge confirmed. The 10-feature set captures volatility clustering, not direction.
+11. **Volatility GRU hyperparameter sweep** — Tune hidden_size (16, 32, 64), dropout (0.1, 0.2, 0.3), learning rate, training stride. Compare val RMSE and R². See `scripts/volatility_gru_train.py`.
+12. **Order-book feature join** — OB columns are still NaN placeholders. Join sol-recorder data to potentially boost volatility R² further.
+13. **Holdout sensitivity analysis** — Train on 2023 only, compare val metrics to full-train run. Never executed (D009 mitigation applied but not tested).
+14. **Phase B reward design** — Cost-aware, abstention-biased reward for {-1, 0, 1} decision head. No design exists yet.

@@ -37,13 +37,13 @@ Input window → Body (sequence encoder) → state vector
 
 **Body**: a sequence encoder (GRU/LSTM to start, not a transformer — simpler, cheaper, easier to debug; complexity should earn its way in through experiments, not be assumed upfront). It compresses the input window into one bottlenecked state vector. The bottleneck is what forces the model to keep predictive signal and drop noise — the same reason an executive summary of a meeting only keeps what mattered.
 
-**v1 implementation:** [gru_encoder.py](file:///d:/ModelProject/model/body/gru_encoder.py) (`GRUEncoder`) — single-layer GRU (hidden=32, 5,016 params), per-feature input scaling (train-split mean/std, clamped ±8), zero-initialized linear head producing `(mean, log_var)` per horizon step. Dropout=0.2 on the GRU final hidden state. Variant [gru_encoder_fixed_var.py](file:///d:/ModelProject/model/body/gru_encoder_fixed_var.py) wraps GRUEncoder with log_var forced to 0 — plain MSE diagnostic to detect variance-shortcut pathology. First two runs (2026-07-22) revealed MSE ≈ unconditional variance (~1.0185) for both variants, confirming the GRU h32 learns zero predictive signal from the 10 Phase A features. See `experiments.md` for run log and `03-current-status-and-next-steps.md` for next directions.
+**v1 implementation:** [gru_encoder.py](file:///d:/ModelProject/model/body/gru_encoder.py) (`GRUEncoder`) — single-layer GRU (hidden=32, 5,016 params), per-feature input scaling (train-split mean/std, clamped ±8), zero-initialized linear head producing `(mean, log_var)` per horizon step. Dropout=0.2 on the GRU final hidden state. Variant [gru_encoder_fixed_var.py](file:///d:/ModelProject/model/body/gru_encoder_fixed_var.py) wraps GRUEncoder with log_var forced to 0 — plain MSE diagnostic to detect variance-shortcut pathology. **Pivot (D020):** Phase A target changed from norm_return trajectory to volatility (`sqrt(mean(squared returns))`). GRU h32 achieves +19.6% RMSE improvement over baseline, R²=0.233, and beats linear Ridge by +9.2%. Direction prediction is dead at all horizons (D017-D019). See `decisions.md` D020-D021 and `experiments.md` for full history.
 
 **Phase A (self-supervised, no trading yet):**
-- **Target**: the continuous `norm_return` values for the next `horizon` steps — a real trajectory, not a discretized label. (Early design had this wrong as a {-1, 0, 1} direction classification — corrected because that reintroduces a hardcoded human framing.)
-- **Output**: `(mean, log_var)` per horizon step — heteroscedastic regression. This produces calibrated uncertainty as a direct byproduct of Phase A, with no separate ensemble required to get started (an ensemble can be added later as an independent second uncertainty estimate).
-- **Loss**: Gaussian negative log-likelihood per step, averaged over the horizon (with an optional decay so near-term steps count more than far-future ones).
-- The UI's `predicted_future_state` lower/upper bands are derived directly from this predicted variance — the exact formula lives in `model/inference/CONTRACT.md`.
+- **Target**: realized volatility — `sqrt(mean(squared norm_returns over next H steps))`. This captures the magnitude of upcoming price movement (volatility clustering), which is predictable from the 10-feature set. Direction (sign of returns) is NOT predictable from these features (D017-D019). The output is a single scalar per window, trained with MSE loss.
+- **Output**: `(mean, log_var)` per horizon step for the return-trajectory variant, or a single scalar for the volatility variant. The volatility variant uses plain MSE loss (no NLL). See `model/INTERFACE.md` for both output formats.
+- **Loss**: For volatility: MSE on `sqrt(mean(r^2))`. For return trajectory (legacy): Gaussian NLL per step with configurable horizon weighting.
+- The UI's `predicted_future_state` lower/upper bands are derived from predicted variance — the exact formula lives in `model/inference/CONTRACT.md`.
 
 **Phase B (decision-making, built after Phase A looks reasonable):**
 - The {-1, 0, 1} long/short/flat decision belongs here, not in Phase A. Head 3 consumes Phase A's predicted trajectory + uncertainty and is trained with the cost-aware, abstention-biased reward described above — not cross-entropy against a hindsight-correct direction label.
@@ -58,13 +58,18 @@ project/
 ├── experiments.md               # append-only experiment journal (auto-populated)
 ├── configs/
 │   ├── example.yaml             # SimpleMLP reference config
-│   ├── phase_a_gru.yaml         # GRUEncoder h=64, dropout=0.1 (16K params)
+│   ├── phase_a_gru.yaml         # GRUEncoder h=32, dropout=0.2 (legacy alias)
 │   ├── phase_a_gru_h32.yaml     # GRUEncoder h=32, dropout=0.2 (5K params)
 │   └── diag_fixed_var.yaml      # GRUEncoderFixedVar diagnostic (MSE-only, 15 epochs)
 ├── scripts/
 │   ├── pull_checkpoint.py       # Drive → model/runs/ syncer (+ experiments.md append)
 │   ├── watch_checkpoints.py     # polls Drive, auto-syncs + analyzes
-│   └── analyze_run.py           # CLI for build_summary (thin wrapper around model/reporting/)
+│   ├── analyze_run.py           # CLI for build_summary (thin wrapper around model/reporting/)
+│   ├── volatility_ridge.py      # Ridge baseline for volatility prediction (alpha CV, bootstrap CI)
+│   ├── volatility_gru_train.py  # GRU training for volatility (standalone, MSE loss)
+│   ├── sign_prediction.py       # Direction prediction diagnostics (corrected baselines)
+│   ├── shorter_horizon_sign.py  # Multi-horizon direction test (H=1,3,5,12)
+│   └── final_diagnostics.py     # Training AUC + volatility quick test
 ├── data/
 │   ├── raw/binance/klines/      # downloaded Binance archive zips
 │   ├── raw/parquet/             # parsed, partitioned by year/month

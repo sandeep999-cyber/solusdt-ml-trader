@@ -1,6 +1,6 @@
 # 02 — Absolute Musts for the Agent
 
-These are hard constraints, not suggestions. If a task seems to require violating one of these, stop and flag it rather than proceeding. See `01-project-overview.md` for why these rules exist and `03-status-and-next-steps.md` for current task context.
+These are hard constraints, not suggestions. If a task seems to require violating one of these, stop and flag it rather than proceeding. See `01-project-overview.md` for why these rules exist and `03-current-status-and-next-steps.md` for current task context.
 
 ---
 
@@ -19,7 +19,7 @@ These are hard constraints, not suggestions. If a task seems to require violatin
 ## Modeling constraints (the philosophy, as hard rules)
 
 7. **No hardcoded technical indicators or human-defined pattern labels as training targets.** No RSI, no zigzag-defined swing, no rule-based "this is a trap" label. If a task seems to call for one, it's likely a Phase B decision-layer concern being confused with a Phase A learning target — check `01-project-overview.md`'s Phase A/B split before proceeding.
-8. **Phase A predicts a continuous trajectory with uncertainty, not a discrete direction label.** Target is `norm_return` over the horizon; output is `(mean, log_var)`; loss is Gaussian NLL. Do not reintroduce a {-1, 0, 1} classification target into Phase A — that was tried and explicitly corrected earlier in this project.
+8. **Phase A predicts a continuous target with uncertainty, not a discrete direction label.** The primary target is now volatility (`sqrt(mean(squared norm_returns))`) — a single scalar per window trained with MSE. The legacy return-trajectory variant outputs `(mean, log_var)` per horizon step with Gaussian NLL. Direction prediction (sign of returns) is NOT learnable from the current feature set (D017-D019). Do not reintroduce a {-1, 0, 1} classification target into Phase A.
 9. **The discrete long/short/flat decision belongs to Phase B (`model/heads/`) only**, trained against a cost-aware, abstention-biased reward — never plain accuracy or cross-entropy against a hindsight-correct label.
 10. **"Flat" must remain a valid, unpunished action** in any Phase B reward design — never structure a reward that implicitly punishes not trading.
 

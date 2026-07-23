@@ -141,15 +141,14 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 ## D017: Sign prediction — NULL result, features uninformative for direction
 - **Date:** 2026-07-23
 - **Context:** D016 showed 10-feature set has no power for magnitude prediction. Test: can it predict direction (sign) instead? Logistic regression on same features, same splits, stride=60.
-- **Result:**
+- **Result (initial, baseline corrected in D018):**
   - Class balance: 50.0% positive (train), 53.5% (val) — nearly balanced
-  - Majority class baseline: accuracy=0.465 (always predict negative)
+  - ~~Majority class baseline: accuracy=0.465 (always predict negative)~~ **WRONG — corrected in D018**
   - Lag-1 persistence baseline: accuracy=0.502
   - Logistic regression: accuracy=0.485, AUC=0.507
-  - vs majority: +2.0%, 95% CI [-1.0%, +4.9%] — includes 0
-  - vs persistence: -1.7%, 95% CI [-5.3%, +1.9%] — includes 0
+  - vs majority: ~~+2.0%~~ **-4.5% (corrected)**
   - Top features: all `realized_vol` at different window positions with alternating signs (noise fitting)
-- **Conclusion:** The 10-feature set has no directional information at the 12-step horizon. Neither magnitude (D016) nor direction (D017) can be predicted. The features are genuinely uninformative for this task. Next: shorter horizon, new features, or different task formulation.
+- **Conclusion:** The 10-feature set has no directional information at the 12-step horizon. Neither magnitude (D016) nor direction (D017) can be predicted. The features are genuinely uninformative for this task. **See D018 for corrected baselines and D019 for shorter horizons.**
 - **Code:** `scripts/sign_prediction.py`.
 
 ## D018: Majority baseline corrected — model worse than trivial

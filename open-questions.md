@@ -37,3 +37,7 @@ Format: one line per item. What's open, when it was raised, what would close it.
 - **Sign prediction** — Logistic regression on 10 features, 12-step sign prediction. Accuracy: 48.5%, AUC: 0.507. Fails to beat baselines (majority class: 46.5%, persistence: 50.2%). Bootstrap CIs include 0 for both comparisons. Top features are all `realized_vol` with alternating signs (noise fitting). Features have no directional information at 12-step horizon. (Closed: 2026-07-23)
 
 - **Shorter horizons** — Tested H=1,3,5,12 with stride=H (non-overlapping). Best val AUC: H=1 (0.509) — still noise. Train AUC 0.582 → val 0.509 is pure overfitting. H=1 always-positive baseline is 48% (not 53.5%) — the +2.8% delta is baseline artifact, not signal. No horizon achieves AUC > 0.52. Features are definitively uninformative for directional prediction at any horizon. (Closed: 2026-07-23)
+
+- **OLS comparison retracted** — `linear_baseline.py` reported OLS val_mse=0.894 (-12%). ERROR: fit on val, evaluated on same val (in-sample). Held-out OLS: val_mse=1.241 (+1.9%). Retracted in D016. (Closed: 2026-07-23)
+
+- **Feature reformulation for direction** — 10-feature set tested for direction at all horizons (H=1,3,5,12). All AUC < 0.52. Resolved: features have no directional signal. Pivot to volatility (D020) succeeded. (Closed: 2026-07-23)

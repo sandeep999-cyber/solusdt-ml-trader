@@ -66,8 +66,10 @@ class MyModel(nn.Module):
 | `H` | horizon (prediction steps ahead) |
 
 - Input: `(B, W, F)` — float32
-- Output: `(mean, log_var)` — each `(B, H)` — float32
-- Target: `(B, H)` — float32, continuous values drawn from `norm_return`
+- Output (return trajectory): `(mean, log_var)` — each `(B, H)` — float32
+- Output (volatility): single tensor `(B,)` — float32
+- Target (return trajectory): `(B, H)` — float32, continuous values drawn from `norm_return`
+- Target (volatility): `(B,)` — float32, `sqrt(mean(norm_return^2 over H steps))`
 
 ---
 
@@ -79,6 +81,13 @@ class MyModel(nn.Module):
 - Horizon weighting: near-term steps can be weighted more heavily via `config.horizon_weighting`. Default is `"uniform"` (all steps equal). When set to `"decay"`, weights decay geometrically with `config.horizon_decay_rate` per step (e.g. rate=0.9 means step 1 weight=1.0, step 2 weight=0.9, step 3 weight=0.81, ...). The rationale is that far-horizon prediction is inherently noisier and should not dominate the loss.
 - Discrete decisions (`"long"` / `"short"` / `"flat"`) are not produced in Phase A. They belong to Phase B, which consumes Phase A's uncertainty-aware trajectory as input.
 - Sub-metrics: `loss`, `nll` (unweighted mean NLL), `mse`, `var_mean` (mean predicted variance across batch/horizon).
+
+### Phase A — Volatility Variant (D020)
+- When `config.target_type == "volatility"`, the target is a single scalar per window: `sqrt(mean(norm_return^2 over next H steps))`.
+- `forward()` returns a single tensor of shape `(B,)` — predicted volatility (no log_var).
+- `compute_loss()` uses plain MSE loss: `nn.functional.mse_loss(pred, target)`.
+- The `CausalWindowDataset` handles the target computation automatically when `target_type="volatility"`.
+- Output shape: `(B,)` not `(B, H)`. Target shape: `(B,)` not `(B, H)`.
 
 ### Phase B (uncertainty-aware + decision)
 - `forward()` returns a tuple `(state_prediction, uncertainty_logits, decision_logits)`.
