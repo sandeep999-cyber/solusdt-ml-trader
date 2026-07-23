@@ -151,3 +151,33 @@ Architecture and design choices with reasoning. One entry per real reversal or s
   - Top features: all `realized_vol` at different window positions with alternating signs (noise fitting)
 - **Conclusion:** The 10-feature set has no directional information at the 12-step horizon. Neither magnitude (D016) nor direction (D017) can be predicted. The features are genuinely uninformative for this task. Next: shorter horizon, new features, or different task formulation.
 - **Code:** `scripts/sign_prediction.py`.
+
+## D018: Majority baseline corrected — model worse than trivial
+- **Date:** 2026-07-23
+- **Context:** D017 used minority class (46.5%) as baseline. Correct baseline is always-positive (53.5%).
+- **Corrected result:**
+  - Always-positive: accuracy=0.535 (true majority)
+  - Lag-1 persistence: accuracy=0.502
+  - Logistic regression: accuracy=0.490, AUC=0.507
+  - vs always-positive: **-4.5%, 95% CI [-8.6%, -0.3%]** — excludes 0. Model is SIGNIFICANTLY worse.
+- **Diagnostic:** Training accuracy=0.554, AUC=0.572. Signal exists in training data but doesn't generalize. Non-stationarity, not total absence of signal.
+- **Leakage audit:** No look-ahead leak (shifted target test passed). All MI < 0.01.
+- **Conclusion:** Model learns spurious pattern that bets against prevailing drift. Val accuracy worse than trivial always-positive.
+- **Code:** `scripts/sign_prediction.py` (corrected version).
+
+## D019: Shorter horizons — still nothing
+- **Date:** 2026-07-23
+- **Context:** D018 showed no signal at H=12. Test: does signal appear at shorter horizons?
+- **Result (stride=H, non-overlapping):**
+
+| H | N_train | Train AUC | Val AUC | Always-pos | Delta |
+|---|---------|-----------|---------|------------|-------|
+| 1 | 876,819 | 0.582 | 0.509 | 0.480 | +2.8% |
+| 3 | 292,273 | 0.544 | 0.505 | 0.503 | -0.6% |
+| 5 | 175,363 | 0.546 | 0.508 | 0.506 | -0.2% |
+| 12 | 73,068 | 0.544 | 0.502 | 0.503 | -0.2% |
+
+- **Best AUC: H=1 (0.509)** — still noise. Train AUC 0.582 → val 0.509 is pure overfitting.
+- **H=1 baseline shift:** At H=1, always-positive=48% (more 1-step negative returns), not 53.5%. The +2.8% delta is baseline artifact, not signal.
+- **Conclusion:** No horizon achieves meaningful AUC (<0.52). The 10-feature set is definitively uninformative for directional prediction at any horizon.
+- **Code:** `scripts/shorter_horizon_sign.py`.

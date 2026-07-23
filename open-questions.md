@@ -8,7 +8,7 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **Next scientific question: shorter horizon** — Both magnitude (D016) and direction (D017) prediction failed at 12-step horizon. Try shorter horizons (1-5 steps) to test if signal exists at shorter timescales. If signal appears at shorter horizons, the features are valid but the 12-step horizon is too far ahead. If no signal at any horizon, the features are fundamentally uninformative. Close: run logistic regression at horizons 1, 3, 5, 12, compare AUCs. (Raised: 2026-07-23)
+- **Feature reformulation** — Current 10-feature set is uninformative for both magnitude (D016) and direction (D017-D019) at all horizons. Options: (1) order-book features (still placeholder NaNs), (2) entirely new feature set (funding rate, liquidations, CVD), (3) different task formulation (next-return instead of 12-step mean). No next step decided. (Raised: 2026-07-23)
 
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
@@ -35,3 +35,5 @@ Format: one line per item. What's open, when it was raised, what would close it.
 - **OLS comparison was in-sample** — `linear_baseline.py` reported OLS val_mse=0.894 (-12% vs baseline). ERROR: OLS was fit on val and evaluated on same val (in-sample). Held-out: val_mse=1.241 (+1.9% vs baseline). The "12% improvement" was an artifact. All models (OLS, linear GD, GRU) fail to beat baseline on held-out data. The 10-feature set has no genuine predictive power for 12-step norm_return. (Closed: 2026-07-23)
 
 - **Sign prediction** — Logistic regression on 10 features, 12-step sign prediction. Accuracy: 48.5%, AUC: 0.507. Fails to beat baselines (majority class: 46.5%, persistence: 50.2%). Bootstrap CIs include 0 for both comparisons. Top features are all `realized_vol` with alternating signs (noise fitting). Features have no directional information at 12-step horizon. (Closed: 2026-07-23)
+
+- **Shorter horizons** — Tested H=1,3,5,12 with stride=H (non-overlapping). Best val AUC: H=1 (0.509) — still noise. Train AUC 0.582 → val 0.509 is pure overfitting. H=1 always-positive baseline is 48% (not 53.5%) — the +2.8% delta is baseline artifact, not signal. No horizon achieves AUC > 0.52. Features are definitively uninformative for directional prediction at any horizon. (Closed: 2026-07-23)
