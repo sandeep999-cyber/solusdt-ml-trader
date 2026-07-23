@@ -193,6 +193,7 @@ export default function App() {
       />
 
       <InfoPanel
+        bars={bars}
         inferences={inferences}
         currentInf={cursorTimestamp ? (inferenceByTs.get(cursorTimestamp) ?? null) : null}
       />
