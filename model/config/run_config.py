@@ -54,6 +54,8 @@ class RunConfig:
     training_stride: int = 1  # Step between training windows. stride=1 = full overlap.
                                # stride=60 = non-overlapping. Affects effective sample size.
 
+    target_type: str = "return"  # "return" = raw norm_return (H,); "volatility" = sqrt(mean(r^2)) (1,)
+
     run_name: str = ""
     model_class: str = "model.body.simple_mlp.SimpleMLP"
     notes: str = ""

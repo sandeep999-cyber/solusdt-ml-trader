@@ -8,13 +8,13 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **Feature reformulation** — Current 10-feature set is uninformative for both magnitude (D016) and direction (D017-D019) at all horizons. Options: (1) order-book features (still placeholder NaNs), (2) entirely new feature set (funding rate, liquidations, CVD), (3) different task formulation (next-return instead of 12-step mean). No next step decided. (Raised: 2026-07-23)
-
-- **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
+- **Volatility GRU hyperparameter sweep** — GRU h32 achieves +19.6% RMSE improvement, R²=0.233. Next: tune hidden_size (16, 32, 64), dropout (0.1, 0.2, 0.3), learning rate, training stride. Also test if training stride=60 (non-overlapping) improves generalization. Close: run 5-10 configs, report best RMSE + R² on val. (Raised: 2026-07-23)
 
 - **Order-book feature join** — `ob_imbalance`, `ob_depth_bid_5`, `ob_depth_ask_5`, `ob_spread` are NaN placeholders in `features.py`. The [[sol-recorder]] data exists but hasn't been joined. Close: implement the join in `data/pipeline/features.py`, verify no NaN rows remain in the OB columns, and re-run the feature pipeline. (Raised: 2026-07-20, still open)
 
 - **Holdout sensitivity analysis** — The original concern was "is 2024 alone enough holdout?" A partial mitigation was applied: 2023 was added to the training set (now 20 months), while val/test stayed fixed at Sep–Nov and Nov–Jan 2024–2025. But the sensitivity analysis itself was never run: does val/test behavior actually change with train-set length? Without that test, we don't know if the extension helped or was just a checkbox. Close: train on 2023 only, evaluate on 2024-09+, and compare val metrics to the full-train run. If they're similar, the holdout is sufficient regardless of train length. (Raised: 2026-07-21)
+
+- **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
 ## Resolved
 

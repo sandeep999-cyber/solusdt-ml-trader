@@ -181,3 +181,38 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **H=1 baseline shift:** At H=1, always-positive=48% (more 1-step negative returns), not 53.5%. The +2.8% delta is baseline artifact, not signal.
 - **Conclusion:** No horizon achieves meaningful AUC (<0.52). The 10-feature set is definitively uninformative for directional prediction at any horizon.
 - **Code:** `scripts/shorter_horizon_sign.py`.
+
+## D020: Volatility pivot — Ridge confirms signal, nonlinear edge exists
+- **Date:** 2026-07-23
+- **Context:** D017-D019 showed features are uninformative for direction. D018 diagnostic showed marginal signal in training data (train AUC 0.582). User suggested testing volatility prediction as alternative target.
+- **Target:** `sqrt(mean(squared returns over next H steps))` — realized volatility.
+- **Ridge results (stride=H, non-overlapping val):**
+
+| H | Improvement | 95% CI | R² |
+|---|-------------|--------|-----|
+| 1 | +0.33% | [0.24, 0.42] | 0.006 |
+| 3 | +1.70% | [1.53, 1.87] | 0.034 |
+| 5 | +2.67% | [2.38, 2.96] | 0.053 |
+| 12 | **+4.85%** | **[4.25, 5.43]** | **0.095** |
+
+- **GRU vs Ridge (H=12, stride=60 val):**
+
+| Model | RMSE | Improvement | R² |
+|-------|------|-------------|-----|
+| Baseline | 0.2517 | --- | 0.000 |
+| Ridge | 0.2232 | +11.4% | 0.068 |
+| GRU h32 | **0.2025** | **+19.6%** | **0.233** |
+| GRU vs Ridge | | **+9.2%** | CI [7.5, 11.0] |
+
+- **Conclusion:** The feature set IS useful for volatility prediction. The GRU has a clear nonlinear edge over linear (9.2% improvement, CI excludes 0). R²=0.233 means the model explains 23% of variance in realized volatility — meaningful for risk management.
+- **Pivot decision:** Kill all direction tasks. Volatility forecasting is the new target. The features capture information about upcoming return magnitude (volatility clustering), not direction.
+- **Code:** `scripts/volatility_ridge.py`, `scripts/volatility_gru_train.py`.
+
+## D021: Loader volatility target support
+- **Date:** 2026-07-23
+- **Context:** D020 showed volatility is the correct target. Need pipeline support for volatility target in the training harness.
+- **Changes:**
+  - Added `target_type: str = "return"` field to `RunConfig` (supports "return" or "volatility")
+  - Modified `CausalWindowDataset.__getitem__()` to compute `sqrt(mean(tgt^2))` when `target_type="volatility"`, returning shape (1,) instead of (horizon,)
+- **Impact:** Existing runs unaffected (default is "return"). New volatility runs use `target_type: "volatility"` in config.
+- **Code:** `model/config/run_config.py`, `model/data/loader.py`.

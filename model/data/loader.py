@@ -92,6 +92,7 @@ class CausalWindowDataset(Dataset):
 
         # Target: use norm_return (continuous, already causally clean upstream)
         self.targets = self.df["norm_return"].values.astype(np.float32)
+        self.target_type = getattr(config, "target_type", "return")
 
         # Handle NaN in features (forward-fill then back-fill)
         self.features = _safe_fill(self.features)
@@ -116,7 +117,14 @@ class CausalWindowDataset(Dataset):
         actual_idx = idx * self.stride
         win = self.features[actual_idx : actual_idx + self.window_length]
         start = actual_idx + self.window_length
-        tgt = self.targets[start : start + self.horizon]
+        tgt_raw = self.targets[start : start + self.horizon]
+
+        if self.target_type == "volatility":
+            # Realized volatility: sqrt(mean(squared returns over horizon))
+            tgt = torch.sqrt(torch.mean(tgt_raw ** 2)).unsqueeze(0)  # scalar -> (1,)
+        else:
+            tgt = tgt_raw  # (horizon,) sequence of returns
+
         return win, tgt
 
     def get_timestamps(self, idx: int) -> tuple[str, str]:
