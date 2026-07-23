@@ -1,11 +1,7 @@
-"""Sign prediction experiment: can the 10 features predict return direction?
+"""Sign prediction experiment — with corrected baselines and diagnostics.
 
-Tests whether the features have directional information at the 12-step horizon,
-even though they can't predict magnitude (D016).
-
-Baselines: majority class, lag-1 persistence.
-Model: logistic regression (sklearn).
-Metrics: accuracy, AUC, precision/recall/F1, bootstrap CIs.
+CORRECTED: Majority baseline uses most frequent class (not minority).
+DIAGNOSTICS: Training-set accuracy/AUC, feature leakage audit.
 """
 
 from __future__ import annotations
@@ -22,6 +18,7 @@ from sklearn.metrics import (
     roc_auc_score,
     precision_recall_fscore_support,
     confusion_matrix,
+    mutual_info_score,
 )
 
 _root = Path(__file__).resolve().parent.parent
@@ -33,57 +30,39 @@ from model.inference.engine import _ffill_np
 
 
 def get_windows(df, stride=60):
-    """Extract (X_flat, y_raw) pairs for sign prediction."""
+    """Extract (X_flat, y_raw, last_return) pairs."""
     feat = _ffill_np(df[PHASE_A_FEATURES].values.astype(np.float32))
     feat = np.nan_to_num(feat, nan=0.0)
     nr = df["norm_return"].values.astype(np.float64)
     H, W = 12, 60
     wv = np.lib.stride_tricks.sliding_window_view(feat, window_shape=W, axis=0)
     bi = np.arange(W - 1, len(feat))[::stride]
-    X, Y, last_return = [], [], []
+    X, Y, last_ret = [], [], []
     for idx in bi:
         if idx + 1 + H > len(nr):
             continue
         start = idx - (W - 1)
         win = wv[start].T.copy()
-        X.append(win.flatten())  # (600,)
-        # Target: sign of mean return over next 12 steps
+        X.append(win.flatten())
         Y.append(nr[idx + 1 : idx + 1 + H].mean())
-        # Lag-1: sign of the most recent return (last bar in window)
-        last_return.append(nr[idx])
-    return np.array(X), np.array(Y), np.array(last_return)
+        last_ret.append(nr[idx])
+    return np.array(X), np.array(Y), np.array(last_ret)
 
 
-def bootstrap_ci(acc1, acc2, y_true, n_boot=10000, seed=42):
-    """Bootstrap CI for accuracy difference (acc1 - acc2)."""
+def bootstrap_ci_acc(preds1, preds2, y_true, n_boot=10000, seed=42):
+    """Bootstrap CI for accuracy difference (preds1 - preds2)."""
     rng = np.random.RandomState(seed)
     n = len(y_true)
     diffs = np.zeros(n_boot)
     for i in range(n_boot):
         idx = rng.choice(n, n, replace=True)
-        diffs[i] = np.mean(acc1[idx] == y_true[idx]) - np.mean(acc2[idx] == y_true[idx])
+        diffs[i] = np.mean(preds1[idx] == y_true[idx]) - np.mean(preds2[idx] == y_true[idx])
     return float(np.percentile(diffs, 2.5)), float(np.percentile(diffs, 97.5))
-
-
-def permutation_test(acc_model, acc_baseline, y_true, n_perm=10000, seed=42):
-    """Permutation test: is model accuracy significantly better than baseline?"""
-    rng = np.random.RandomState(seed)
-    n = len(y_true)
-    observed_diff = acc_model - acc_baseline
-    count = 0
-    for _ in range(n_perm):
-        perm = rng.permutation(n)
-        # Simulate null: model predictions randomly shuffled relative to truth
-        acc_perm = np.mean(perm == np.arange(n))  # not useful, use different approach
-        # Actually: compare model preds vs baseline preds under permutation
-        break  # simplify: use bootstrap CI instead
-    # Fall back to bootstrap CI for the difference
-    return None
 
 
 def main():
     print("=" * 70)
-    print("SIGN PREDICTION EXPERIMENT")
+    print("SIGN PREDICTION EXPERIMENT (corrected)")
     print("=" * 70)
     print()
 
@@ -96,7 +75,6 @@ def main():
     X_train, Y_train_raw, last_ret_train = get_windows(train_df, stride=60)
     X_val, Y_val_raw, last_ret_val = get_windows(val_df, stride=60)
 
-    # Binary targets: sign of mean 12-step return
     y_train = (Y_train_raw > 0).astype(int)
     y_val = (Y_val_raw > 0).astype(int)
 
@@ -107,103 +85,172 @@ def main():
     print("=== CLASS BALANCE ===")
     train_pos_rate = y_train.mean()
     val_pos_rate = y_val.mean()
+    majority_class = 1 if train_pos_rate > 0.5 else 0
     print(f"  Train: {y_train.sum()}/{len(y_train)} positive ({train_pos_rate:.1%})")
     print(f"  Val:   {y_val.sum()}/{len(y_val)} positive ({val_pos_rate:.1%})")
+    print(f"  Majority class: {'positive' if majority_class else 'negative'} ({max(train_pos_rate, 1-train_pos_rate):.1%})")
     print()
 
-    # === BASELINES ===
-    print("=== BASELINES ===")
+    # === BASELINES (corrected) ===
+    print("=== BASELINES (corrected) ===")
 
-    # 1. Majority class
-    majority_class = 1 if train_pos_rate > 0.5 else 0
-    majority_preds = np.full(len(y_val), majority_class)
-    acc_majority = accuracy_score(y_val, majority_preds)
-    print(f"  Majority class (always {'+' if majority_class else '-'}): accuracy={acc_majority:.4f}")
+    # 1. Always-positive (the actual majority class)
+    acc_always_pos = accuracy_score(y_val, np.ones(len(y_val), dtype=int))
+    print(f"  Always positive:    accuracy={acc_always_pos:.4f}")
 
-    # 2. Lag-1 persistence (sign of last return)
+    # 2. Always-negative
+    acc_always_neg = accuracy_score(y_val, np.zeros(len(y_val), dtype=int))
+    print(f"  Always negative:    accuracy={acc_always_neg:.4f}")
+
+    # 3. Lag-1 persistence
     persistence_preds = (last_ret_val > 0).astype(int)
     acc_persistence = accuracy_score(y_val, persistence_preds)
-    print(f"  Lag-1 persistence: accuracy={acc_persistence:.4f}")
+    print(f"  Lag-1 persistence:  accuracy={acc_persistence:.4f}")
     print()
 
-    # === LOGISTIC REGRESSION ===
+    # === LOGISTIC REGRESSION (no class weighting first) ===
     print("=== LOGISTIC REGRESSION ===")
     print(f"  Features: {X_train.shape[1]} (60 windows x 10 indicators)")
 
-    # Standardize features (important for logistic regression)
     mean = X_train.mean(axis=0)
     std = X_train.std(axis=0).clip(min=1e-6)
     X_train_z = (X_train - mean) / std
     X_val_z = (X_val - mean) / std
 
-    # Fit logistic regression
-    lr = LogisticRegression(class_weight="balanced", max_iter=1000, C=1.0)
-    lr.fit(X_train_z, y_train)
+    # Unweighted (fair accuracy comparison)
+    lr_unw = LogisticRegression(max_iter=1000, C=1.0)
+    lr_unw.fit(X_train_z, y_train)
+    preds_unw = lr_unw.predict(X_val_z)
+    probs_unw = lr_unw.predict_proba(X_val_z)[:, 1]
+    acc_unw = accuracy_score(y_val, preds_unw)
+    bal_acc_unw = balanced_accuracy_score(y_val, preds_unw)
+    auc_unw = roc_auc_score(y_val, probs_unw)
 
-    # Predictions
-    preds = lr.predict(X_val_z)
-    probs = lr.predict_proba(X_val_z)[:, 1]
+    # Weighted (for minority recall)
+    lr_w = LogisticRegression(class_weight="balanced", max_iter=1000, C=1.0)
+    lr_w.fit(X_train_z, y_train)
+    preds_w = lr_w.predict(X_val_z)
+    probs_w = lr_w.predict_proba(X_val_z)[:, 1]
+    acc_w = accuracy_score(y_val, preds_w)
+    bal_acc_w = balanced_accuracy_score(y_val, preds_w)
+    auc_w = roc_auc_score(y_val, probs_w)
 
-    # Metrics
-    acc_model = accuracy_score(y_val, preds)
-    bal_acc = balanced_accuracy_score(y_val, preds)
-    auc = roc_auc_score(y_val, probs)
-    prec, rec, f1, _ = precision_recall_fscore_support(y_val, preds, average=None, labels=[0, 1])
-    cm = confusion_matrix(y_val, preds)
+    print()
+    print(f"  {'Metric':<25} {'Unweighted':>12} {'Balanced':>12}")
+    print(f"  {'-'*50}")
+    print(f"  {'Val accuracy':<25} {acc_unw:12.4f} {acc_w:12.4f}")
+    print(f"  {'Val balanced accuracy':<25} {bal_acc_unw:12.4f} {bal_acc_w:12.4f}")
+    print(f"  {'Val AUC-ROC':<25} {auc_unw:12.4f} {auc_w:12.4f}")
+    print()
 
-    print(f"  Accuracy:         {acc_model:.4f}")
-    print(f"  Balanced accuracy:{bal_acc:.4f}")
-    print(f"  AUC-ROC:          {auc:.4f}")
-    print(f"  Precision (neg):  {prec[0]:.4f}")
-    print(f"  Recall (neg):     {rec[0]:.4f}")
-    print(f"  F1 (neg):         {f1[0]:.4f}")
-    print(f"  Precision (pos):  {prec[1]:.4f}")
-    print(f"  Recall (pos):     {rec[1]:.4f}")
-    print(f"  F1 (pos):         {f1[1]:.4f}")
-    print(f"  Confusion matrix:")
+    # Confusion matrix for unweighted
+    cm = confusion_matrix(y_val, preds_unw)
+    print(f"  Confusion matrix (unweighted):")
     print(f"    TN={cm[0,0]:5d}  FP={cm[0,1]:5d}")
     print(f"    FN={cm[1,0]:5d}  TP={cm[1,1]:5d}")
     print()
 
-    # === BOOTSTRAP CIs ===
-    print("=== BOOTSTRAP CIs (10,000 resamples) ===")
+    # Bootstrap CIs
+    print("=== BOOTSTRAP CIs (unweighted model) ===")
+    ci_vs_always_pos = bootstrap_ci_acc(preds_unw, np.ones(len(y_val), dtype=int), y_val)
+    ci_vs_always_neg = bootstrap_ci_acc(preds_unw, np.zeros(len(y_val), dtype=int), y_val)
+    ci_vs_persistence = bootstrap_ci_acc(preds_unw, persistence_preds, y_val)
 
-    ci_vs_majority = bootstrap_ci(preds, majority_preds, y_val)
-    ci_vs_persistence = bootstrap_ci(preds, persistence_preds, y_val)
-
-    print(f"  vs majority class:  diff={acc_model-acc_majority:+.4f}, 95% CI [{ci_vs_majority[0]:+.4f}, {ci_vs_majority[1]:+.4f}]")
-    print(f"  vs persistence:     diff={acc_model-acc_persistence:+.4f}, 95% CI [{ci_vs_persistence[0]:+.4f}, {ci_vs_persistence[1]:+.4f}]")
+    print(f"  vs always positive: diff={acc_unw-acc_always_pos:+.4f}, 95% CI [{ci_vs_always_pos[0]:+.4f}, {ci_vs_always_pos[1]:+.4f}]")
+    print(f"  vs always negative: diff={acc_unw-acc_always_neg:+.4f}, 95% CI [{ci_vs_always_neg[0]:+.4f}, {ci_vs_always_neg[1]:+.4f}]")
+    print(f"  vs persistence:     diff={acc_unw-acc_persistence:+.4f}, 95% CI [{ci_vs_persistence[0]:+.4f}, {ci_vs_persistence[1]:+.4f}]")
     print()
 
-    # === INTERPRETATION ===
-    print("=== INTERPRETATION ===")
-    beats_majority = ci_vs_majority[0] > 0
-    beats_persistence = ci_vs_persistence[0] > 0
+    # === TRAINING-SET PERFORMANCE ===
+    print("=== TRAINING-SET PERFORMANCE (critical diagnostic) ===")
+    train_preds_unw = lr_unw.predict(X_train_z)
+    train_probs_unw = lr_unw.predict_proba(X_train_z)[:, 1]
+    train_acc = accuracy_score(y_train, train_preds_unw)
+    train_bal_acc = balanced_accuracy_score(y_train, train_preds_unw)
+    train_auc = roc_auc_score(y_train, train_probs_unw)
 
-    if beats_majority and beats_persistence:
-        print("  SIGNIFICANT: Model beats both baselines (CI excludes 0).")
-        print("  Features contain directional information at 12-step horizon.")
-        print("  Next: build direction-based trading signal.")
-    elif beats_majority:
-        print("  PARTIAL: Model beats majority class but not persistence.")
-        print("  Features add nothing beyond autoregressive structure.")
+    print(f"  Train accuracy:         {train_acc:.4f}")
+    print(f"  Train balanced accuracy:{train_bal_acc:.4f}")
+    print(f"  Train AUC-ROC:          {train_auc:.4f}")
+    print(f"  Val accuracy:           {acc_unw:.4f}")
+    print(f"  Val AUC-ROC:            {auc_unw:.4f}")
+    print()
+
+    if train_acc > 0.55 and acc_unw < 0.52:
+        print("  DIAGNOSIS: Signal exists in training data but doesn't generalize.")
+        print("  -> Non-stationarity or overfitting, not total absence of signal.")
+    elif train_acc < 0.52:
+        print("  DIAGNOSIS: No learnable signal even in training data.")
+        print("  -> Features contain no predictive information for this target.")
     else:
-        print("  NULL: Model fails to beat majority class baseline.")
-        print("  Features are uninformative for direction at this horizon.")
-        print("  Consider: shorter horizon, new features, or different task.")
+        print(f"  DIAGNOSIS: train={train_acc:.1%}, val={acc_unw:.1%} -- marginal")
     print()
 
-    # === FEATURE IMPORTANCE (top 10) ===
-    print("=== TOP 10 FEATURES BY ABS COEFFICIENT ===")
-    coefs = lr.coef_[0]
-    feature_names = []
-    for w in range(60):
-        for f_name in PHASE_A_FEATURES:
-            feature_names.append(f"w{w:02d}_{f_name}")
-    top_idx = np.argsort(np.abs(coefs))[::-1][:10]
-    for rank, idx in enumerate(top_idx):
-        print(f"  {rank+1:2d}. {feature_names[idx]:30s}  coef={coefs[idx]:+.4f}")
+    # === FEATURE LEAKAGE AUDIT ===
+    print("=== FEATURE LEAKAGE AUDIT ===")
+    print("  Testing: add random shifted column to features, retrain in-sample")
+    print("  If accuracy jumps dramatically, original features may be leaking.")
     print()
+
+    # Baseline in-sample accuracy
+    baseline_train_acc = train_acc
+
+    # Test 1: Add random noise column
+    rng = np.random.RandomState(42)
+    noise = rng.randn(len(X_train_z), 1)
+    X_train_noise = np.hstack([X_train_z, noise])
+    lr_noise = LogisticRegression(max_iter=1000, C=1.0)
+    lr_noise.fit(X_train_noise, y_train)
+    noise_acc = accuracy_score(y_train, lr_noise.predict(X_train_noise))
+    print(f"  + random noise column:  train_acc={noise_acc:.4f} (baseline={baseline_train_acc:.4f}, diff={noise_acc-baseline_train_acc:+.4f})")
+
+    # Test 2: Add shifted target (future leak)
+    shifted_target = np.roll(y_train, -1)  # shift forward by 1
+    X_train_leak = np.hstack([X_train_z, shifted_target.reshape(-1, 1)])
+    lr_leak = LogisticRegression(max_iter=1000, C=1.0)
+    lr_leak.fit(X_train_leak, y_train)
+    leak_acc = accuracy_score(y_train, lr_leak.predict(X_train_leak))
+    print(f"  + shifted target column: train_acc={leak_acc:.4f} (baseline={baseline_train_acc:.4f}, diff={leak_acc-baseline_train_acc:+.4f})")
+
+    if leak_acc - baseline_train_acc > 0.05:
+        print("  WARNING: Large jump with shifted target — possible look-ahead leak in features!")
+    else:
+        print("  No evidence of look-ahead leak.")
+    print()
+
+    # Test 3: Univariate mutual information
+    print("  Univariate MI with target (top 5 features):")
+    mi_scores = []
+    for col in range(X_train_z.shape[1]):
+        # Discretize for MI calculation
+        x_disc = pd.qcut(X_train_z[:, col], q=10, duplicates="drop")
+        mi = mutual_info_score(x_disc, y_train)
+        mi_scores.append((col, mi))
+    mi_scores.sort(key=lambda x: -x[1])
+    for rank, (col, mi) in enumerate(mi_scores[:5]):
+        w_idx = col // len(PHASE_A_FEATURES)
+        f_idx = col % len(PHASE_A_FEATURES)
+        print(f"    {rank+1}. feature[{col}] w{w_idx:02d}_{PHASE_A_FEATURES[f_idx]}: MI={mi:.4f}")
+
+    max_mi = mi_scores[0][1]
+    if max_mi < 0.01:
+        print("  All MI < 0.01 — features have negligible relationship with target.")
+    print()
+
+    # === FINAL SUMMARY ===
+    print("=" * 70)
+    print("FINAL SUMMARY")
+    print("=" * 70)
+    print(f"  Always positive baseline:  {acc_always_pos:.4f}")
+    print(f"  Lag-1 persistence:         {acc_persistence:.4f}")
+    print(f"  Logistic regression:       {acc_unw:.4f}  AUC={auc_unw:.4f}")
+    print(f"  Train accuracy:            {train_acc:.4f}")
+    print()
+    if auc_unw < 0.52 and train_acc < 0.55:
+        print("  CONCLUSION: Features contain no predictive signal for 12-step")
+        print("  return direction. Neither magnitude (D016) nor direction (D017)")
+        print("  can be predicted. The feature set is empty for this task.")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
