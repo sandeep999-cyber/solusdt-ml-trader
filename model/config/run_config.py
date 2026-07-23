@@ -51,6 +51,8 @@ class RunConfig:
     optimizer: str = "adam"
     num_epochs: int = 50
     seed: int = 42
+    training_stride: int = 1  # Step between training windows. stride=1 = full overlap.
+                               # stride=60 = non-overlapping. Affects effective sample size.
 
     run_name: str = ""
     model_class: str = "model.body.simple_mlp.SimpleMLP"

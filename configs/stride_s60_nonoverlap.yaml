@@ -1,0 +1,13 @@
+phase: A
+window_length: 60
+horizon: 12
+horizon_weighting: uniform
+training_stride: 60   # Non-overlapping: ~14.6K training windows (1.7% of stride=1)
+batch_size: 256
+learning_rate: 0.001
+optimizer: adam
+num_epochs: 30
+seed: 42
+model_class: model.body.gru_encoder.GRUEncoder
+run_name: stride_s60_nonoverlap
+notes: "Stride experiment non-overlapping: training_stride=60, val_stride=60. Tests if overlap was the entire problem."

@@ -361,8 +361,14 @@ def train(config_path: str, smoke_test: bool = False) -> None:
     logger.info("Run directory: %s", run_dir)
 
     # Data loaders
-    train_loader = create_dataloader(config, split="train", shuffle=True, device=device)
-    val_loader = create_dataloader(config, split="val", shuffle=False, device=device)
+    # Training stride: controls overlap between training windows.
+    # stride=1 = full overlap (default). stride=window_length = non-overlapping.
+    # See D014, D015 for why this matters.
+    train_loader = create_dataloader(config, split="train", shuffle=True, device=device, stride=config.training_stride)
+    # Validation uses stride=window_length (non-overlapping) to avoid
+    # window-overlap artifacts that inflate val metrics. See D013.
+    val_stride = config.window_length
+    val_loader = create_dataloader(config, split="val", shuffle=False, device=device, stride=val_stride)
 
     # Data provenance for run/checkpoint metadata
     git_commit = _git_commit()

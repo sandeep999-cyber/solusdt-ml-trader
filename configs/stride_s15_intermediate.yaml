@@ -1,0 +1,13 @@
+phase: A
+window_length: 60
+horizon: 12
+horizon_weighting: uniform
+training_stride: 15   # Intermediate: ~58K training windows (6.7% of stride=1)
+batch_size: 256
+learning_rate: 0.001
+optimizer: adam
+num_epochs: 30
+seed: 42
+model_class: model.body.gru_encoder.GRUEncoder
+run_name: stride_s15_intermediate
+notes: "Stride experiment intermediate: training_stride=15, val_stride=60. Tests if harm scales with overlap."

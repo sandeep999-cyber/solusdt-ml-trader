@@ -42,12 +42,14 @@ class CausalWindowDataset(Dataset):
         config: RunConfig,
         split: str = "train",
         device: torch.device = torch.device("cpu"),
+        stride: int = 1,
     ):
         self.config = config
         self.split = split
         self.device = device
         self.window_length = config.window_length
         self.horizon = config.horizon
+        self.stride = stride
 
         # Load feature dataset
         feat_dir = Path(config.processed_dir)
@@ -98,11 +100,12 @@ class CausalWindowDataset(Dataset):
         self.features = torch.tensor(self.features, dtype=torch.float32)
         self.targets = torch.tensor(self.targets, dtype=torch.float32)
 
-        # Number of valid windows
-        self.n_windows = len(self.df) - self.window_length - self.horizon + 1
+        # Number of valid windows (accounting for stride)
+        raw_windows = len(self.df) - self.window_length - self.horizon + 1
+        self.n_windows = (raw_windows + self.stride - 1) // self.stride
         logger.info(
-            "Constructed %d windows (len=%d, horizon=%d)",
-            self.n_windows, self.window_length, self.horizon,
+            "Constructed %d windows (len=%d, horizon=%d, stride=%d)",
+            self.n_windows, self.window_length, self.horizon, self.stride,
         )
 
     def __len__(self) -> int:
@@ -110,8 +113,9 @@ class CausalWindowDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Return (window, target) for the idx-th causal window (zero-copy slice)."""
-        win = self.features[idx : idx + self.window_length]
-        start = idx + self.window_length
+        actual_idx = idx * self.stride
+        win = self.features[actual_idx : actual_idx + self.window_length]
+        start = actual_idx + self.window_length
         tgt = self.targets[start : start + self.horizon]
         return win, tgt
 
@@ -138,6 +142,7 @@ def create_dataloader(
     split: str = "train",
     shuffle: bool = True,
     device: torch.device = torch.device("cpu"),
+    stride: int = 1,
 ) -> DataLoader:
     """Create a DataLoader for the given split.
 
@@ -146,8 +151,14 @@ def create_dataloader(
     Extra workers add process/IPC overhead without helping I/O — keep
     num_workers at 0 (or 2 max on multi-core hosts). pin_memory only
     when the training device is CUDA.
+
+    Args:
+        stride: Step size between windows. stride=1 (default) gives full
+            overlap (every consecutive window). stride=window_length gives
+            non-overlapping windows. Use stride>1 for honest validation
+            that doesn't exploit window-overlap artifacts.
     """
-    dataset = CausalWindowDataset(config, split=split, device=device)
+    dataset = CausalWindowDataset(config, split=split, device=device, stride=stride)
     use_cuda = isinstance(device, torch.device) and device.type == "cuda"
     # Prefer 0 workers: in-memory slices + small model → workers slow us down.
     # Cap at 2 if explicitly useful later; never 4 (Colab warning / oversub).
