@@ -112,3 +112,28 @@ Architecture and design choices with reasoning. One entry per real reversal or s
   - Both CIs **comfortably exclude** baseline var (1.0158) — lower bound 1.19 is 17% above baseline
 - **Conclusion:** The finding is statistically significant. Both models are **actively harmful** on non-overlapping windows — not just "no signal," but memorized overlap patterns that hurt predictions on fresh data. This is more serious than a ceiling: the model learned something from training that makes it worse than doing nothing on genuinely unseen windows. The high per-window std (0.52) indicates regime-specific variation, but even the lower CI bound excludes baseline. This likely reflects training on stride=1 windows teaching the model to exploit temporal redundancy that doesn't generalize. Worth investigating whether training itself needs coarser stride, not just validation.
 - **Code:** `model/runs/phaseA_20260722_101708/checkpoints/best.pt`, `model/runs/phaseA_20260722_103726/checkpoints/best.pt`.
+
+## D015: Training stride has no effect — harm is fundamental
+- **Date:** 2026-07-23
+- **Context:** D014 confirmed both models are actively harmful at stride=60. Hypothesis: stride=1 training teaches overlap-exploitation. Test: three configs (stride=1,15,60), all evaluated at stride=60 with bootstrap CIs.
+- **Result:**
+  - stride=1: MSE=1.2179, 95% CI [1.1916, 1.2446]
+  - stride=15: MSE=1.2202, 95% CI [1.1939, 1.2469]
+  - stride=60: MSE=1.2200, 95% CI [1.1936, 1.2467]
+  - All three CIs overlap. Pairwise diffs < 0.003. All +20% vs baseline.
+- **Conclusion:** Training stride has no effect on the harm. The hypothesis that stride=1 training teaches overlap-exploitation is **refuted**. The model is actively harmful regardless of training window construction. This points to a deeper problem: either the 10-feature set is fundamentally uninformative for this task, or the GRU encoder architecture is wrong for this data.
+- **Code:** `scripts/compare_stride_experiment.py`, `configs/stride_s1_control.yaml`, `configs/stride_s15_intermediate.yaml`, `configs/stride_s60_nonoverlap.yaml`.
+
+## D016: OLS comparison was in-sample — retracted
+- **Date:** 2026-07-23
+- **Context:** `linear_baseline.py` reported OLS val_mse=0.894, "-12% vs baseline," suggesting features have signal but GRU destroys it. This was cited as evidence that "architecture is the problem."
+- **Error:** The OLS was fit on the val set and evaluated on the same val set (in-sample). When fit on train and evaluated on val (held-out): val_mse=1.241, **+1.9% vs baseline**. The "12% improvement" was an in-sample artifact.
+- **Corrected result:**
+  - OLS held-out: val_mse=1.241, +1.9% vs baseline
+  - Linear GD held-out: val_mse=1.239, +1.8% vs baseline
+  - GRU held-out: val_mse=1.225, +0.7% vs baseline
+  - Baseline: 1.217
+  - **None of them beat baseline on held-out data.**
+- **Conclusion:** The 10-feature set has no genuine predictive power for 12-step-ahead norm_return. The earlier "12% improvement" was wrong. The GRU isn't "too expressive" — there's nothing to learn. The features don't predict this target.
+- **Retraction:** D017 (not committed) proposed "architecture is the problem" based on the in-sample OLS result. That conclusion is retracted. The correct conclusion is that the features lack signal for this task.
+- **Code:** `scripts/linear_baseline.py` (has in-sample bug), `scripts/gd_vs_ols_clean.py` (corrected held-out comparison).

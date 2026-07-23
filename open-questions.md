@@ -8,7 +8,7 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **Training stride question** — Bootstrap CI (D014) confirms both models are actively harmful at stride=60 (CI excludes baseline by 17%+). High per-window std (0.52) suggests regime-specific variation. This raises a question about training itself: does the model learn overlap-exploitation from stride=1 training windows, making it worse on fresh data? Close: train three configs (stride=1,15,60), all evaluated at stride=60, and compare. (Raised: 2026-07-23, experiment designed 2026-07-23)
+- **Next scientific question: sign prediction** — 10-feature set has no power for 12-step magnitude prediction (D016). Try sign prediction (logistic regression) next — fast, often reveals directional edge even when magnitude is noise. If sign prediction also fails on held-out data, strong evidence that the 10 features don't capture any predictive relationship at the 12-step horizon. Close: implement logistic regression baseline, evaluate held-out accuracy/AUC, compare to random chance. (Raised: 2026-07-23)
 
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
@@ -29,3 +29,7 @@ Format: one line per item. What's open, when it was raised, what would close it.
 - **Validation methodology fix** — Re-ran fixed-var vs NLL comparison at stride=60: both models tie (MSE 1.2175 vs 1.2178, difference 0.0003). D011's "ceiling is real" survives honest evaluation. Fixed `model/data/loader.py` to accept `stride` parameter; validation now uses stride=60 (non-overlapping). Every future run's val metrics will now be honest. (Closed: 2026-07-23)
 
 - **Statistical significance of harmful-on-fresh-data finding** — Bootstrap CI (10,000 resamples, n=1,463 per model) on stride=60 per-window MSE. Both models' CIs [1.19, 1.24] comfortably exclude baseline var (1.0158) by 17%+. The finding is statistically significant: both models are actively harmful on non-overlapping windows, not just noise. High per-window std (0.52) indicates regime-specific variation but doesn't explain away the gap. This is more serious than a ceiling — the model learned something from stride=1 training that makes it worse on fresh data. (Closed: 2026-07-23, raised training-stride question in Active)
+
+- **Training stride question** — Ran three configs (stride=1,15,60), all evaluated at stride=60. All three models' CIs overlap (MSE ~1.218-1.220, all +20% vs baseline). Training stride has no effect on the harm. The hypothesis that stride=1 training teaches overlap-exploitation is **refuted**. (Closed: 2026-07-23)
+
+- **OLS comparison was in-sample** — `linear_baseline.py` reported OLS val_mse=0.894 (-12% vs baseline). ERROR: OLS was fit on val and evaluated on same val (in-sample). Held-out: val_mse=1.241 (+1.9% vs baseline). The "12% improvement" was an artifact. All models (OLS, linear GD, GRU) fail to beat baseline on held-out data. The 10-feature set has no genuine predictive power for 12-step norm_return. (Closed: 2026-07-23)
