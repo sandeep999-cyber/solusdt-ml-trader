@@ -192,18 +192,18 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 | 1 | +0.33% | [0.24, 0.42] | 0.007 |
 | 3 | +1.70% | [1.53, 1.87] | 0.034 |
 | 5 | +2.67% | [2.38, 2.96] | 0.053 |
-| 12 | **+4.85%** | **[4.25, 5.43]** | **0.095** |
+| 12 | **+11.4%** | **[10.3, 12.4]** | **0.214** |
 
 - **GRU vs Ridge (H=12, stride=60 val, CORRECTED):**
 
 | Model | RMSE | Improvement | R² |
 |-------|------|-------------|-----|
 | Baseline | 0.2517 | --- | 0.000 |
-| Ridge | 0.2243 | +4.85% | 0.095 |
-| GRU h32 | **0.2025** | **+19.6%** | **~0.354** |
+| Ridge | 0.2232 | +11.4% | 0.214 |
+| GRU h32 | **0.2025** | **+19.6%** | **0.353** |
 | GRU vs Ridge | | **+9.2%** | CI [7.5, 11.0] |
 
-- **Conclusion:** Single-split shows real but modest signal for volatility (Ridge R²=0.095). GRU shows strong nonlinear edge (+19.6%). **BUT: walk-forward (D022) shows Ridge stacked R²=-0.077.** Single-split results are not robust. GRU walk-forward still needed.
+- **Conclusion:** Single-split shows real but modest signal for volatility (Ridge R²=0.214). GRU shows strong nonlinear edge (+19.6%, R²=0.353). **BUT: walk-forward (D022) shows Ridge stacked R²=-0.077.** Single-split results are not robust. GRU walk-forward still needed.
 - **Pivot decision:** Kill all direction tasks. Volatility forecasting is the new target. The features capture information about upcoming return magnitude (volatility clustering), not direction.
 - **Code:** `scripts/volatility_ridge.py`, `scripts/volatility_gru_train.py`.
 
@@ -213,14 +213,33 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **Pattern of single-split reversals:** This is the THIRD time a single-split result reversed under honest evaluation:
   1. NLL run: "beat baseline" on stride=1 → 20% harmful at stride=60
   2. Fixed-var MSE: "tied" at stride=1 → diverged at stride=60
-  3. **Ridge volatility: +4.85% single-split → -3.76% walk-forward**
+  3. **Ridge volatility: +11.4% single-split → -3.76% walk-forward**
 - **Walk-forward Ridge (H=12):**
   - Fold 1: -0.36%, Fold 2: -19.69%, Fold 3: +1.86%, Fold 4: +5.35%, Fold 5: -5.04%
   - Stacked: RMSE=0.242, improvement=-3.76%, R²=-0.077
   - Signal does NOT survive temporal distribution shift
-- **Implication for GRU:** The GRU's un-walk-forward-tested +19.6% / R²≈0.354 should be treated as the LEAST trustworthy number. Given the pattern of 3 reversals, expect GRU walk-forward to also evaporate or reverse.
+- **Implication for GRU:** The GRU's un-walk-forward-tested +19.6% / R²=0.353 should be treated as the LEAST trustworthy number. Given the pattern of 3 reversals, expect GRU walk-forward to also evaporate or reverse.
 - **R² formula confirmed:** `improvement` = % RMSE reduction = (1 - rmse_model/rmse_baseline) * 100. Therefore R² = 1 - (rmse_model/rmse_baseline)² = 1 - (1 - improvement/100)². The squared relationship is correct.
 - **Decision:** Run GRU walk-forward next (not GARCH) — it's cheaper and determines whether there's any nonlinear edge worth comparing against an econometric baseline.
+
+## D023: GRU walk-forward — nonlinear edge does not exist
+- **Date:** 2026-07-23
+- **Context:** D022 predicted GRU walk-forward would likely evaporate. Ran 5-fold expanding window with GRU h32 (15 epochs, 100K training cap per fold).
+- **Fold-by-fold results:**
+
+| Fold | N_train | GRU Improve% | Ridge Improve% | GRU R² |
+|------|---------|-------------|----------------|--------|
+| 1 | 17,541 | +9.51% | -0.36% | 0.181 |
+| 2 | 35,082 | **-148.19%** | -19.69% | -5.160 |
+| 3 | 52,623 | **-45.81%** | +1.86% | -1.126 |
+| 4 | 70,644 | +11.64% | +5.35% | 0.219 |
+| 5 | 87,705 | +10.14% (3 windows) | -5.04% | 0.193 |
+| **Stacked** | | **-57.81%** | **-3.76%** | **-1.49** |
+
+- **Pattern:** GRU is regime-sensitive — works in folds 1 and 4, catastrophically fails in folds 2 and 3. Fold 2 alone (-148%) destroys the stacked result. This is WORSE than Ridge, which failed gently (-3.76%).
+- **Conclusion:** The GRU's single-split +19.6% / R²≈0.354 was pure overfitting to the specific train/val period. The nonlinear edge does not exist. The 10-feature set has no robust predictive power for volatility — neither linear nor nonlinear.
+- **Pattern count:** FOUR single-split reversals now (D022 had three). The base rate is clear: single-split results in this codebase are not trustworthy.
+- **Decision:** The volatility prediction task is dead with the current feature set. Do not proceed with GARCH/HAR comparison, hyperparameter sweeps, or order-book features until a fundamentally different data source or task formulation is introduced.
 
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23
