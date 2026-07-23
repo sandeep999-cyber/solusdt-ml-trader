@@ -37,7 +37,7 @@ Input window → Body (sequence encoder) → state vector
 
 **Body**: a sequence encoder (GRU/LSTM to start, not a transformer — simpler, cheaper, easier to debug; complexity should earn its way in through experiments, not be assumed upfront). It compresses the input window into one bottlenecked state vector. The bottleneck is what forces the model to keep predictive signal and drop noise — the same reason an executive summary of a meeting only keeps what mattered.
 
-**v1 implementation:** model/body/gru_encoder.py (GRUEncoder) — single-layer GRU with hidden size 64, per-feature input scaling (train-split mean/std, clamped ±8), zero-initialized linear head producing (mean, log_var) per horizon step. ~16K parameters. See the file for full design rationale.
+**v1 implementation:** [gru_encoder.py](file:///d:/ModelProject/model/body/gru_encoder.py) (`GRUEncoder`) — single-layer GRU (hidden=32, 5,016 params), per-feature input scaling (train-split mean/std, clamped ±8), zero-initialized linear head producing `(mean, log_var)` per horizon step. Dropout=0.2 on the GRU final hidden state. Variant [gru_encoder_fixed_var.py](file:///d:/ModelProject/model/body/gru_encoder_fixed_var.py) wraps GRUEncoder with log_var forced to 0 — plain MSE diagnostic to detect variance-shortcut pathology. First two runs (2026-07-22) revealed MSE ≈ unconditional variance (~1.0185) for both variants, confirming the GRU h32 learns zero predictive signal from the 10 Phase A technical-indicator features. See `experiments.md` for run log and `03-current-status-and-next-steps.md` for next directions.
 
 **Phase A (self-supervised, no trading yet):**
 - **Target**: the continuous `norm_return` values for the next `horizon` steps — a real trajectory, not a discretized label. (Early design had this wrong as a {-1, 0, 1} direction classification — corrected because that reintroduces a hardcoded human framing.)
@@ -54,33 +54,51 @@ Input window → Body (sequence encoder) → state vector
 
 ```
 project/
-├── configs/                     # run config YAMLs (example.yaml, phase_a_gru.yaml)
+├── colab_train.ipynb            # Colab training notebook (badge-open, no uploads)
+├── experiments.md               # append-only experiment journal (auto-populated)
+├── configs/
+│   ├── phase_a_gru_h32.yaml     # GRUEncoder h=32 baseline config
+│   ├── diag_fixed_var.yaml      # GRUEncoderFixedVar diagnostic config
+│   └── example.yaml             # SimpleMLP reference config
+├── scripts/
+│   ├── pull_checkpoint.py       # Drive → model/runs/ syncer (+ experiments.md append)
+│   ├── watch_checkpoints.py     # polls Drive, auto-syncs + analyzes
+│   └── analyze_run.py           # CLI for build_summary (thin wrapper around model/reporting/)
 ├── data/
-│   ├── raw/binance/klines/   # downloaded Binance archive zips
-│   ├── raw/parquet/           # parsed, partitioned by year/month
-│   ├── processed/v1/          # feature tables, partitioned by year/month
-│   ├── pipeline/               # download.py, parse.py, features.py, build.py, config.py
+│   ├── raw/binance/klines/      # downloaded Binance archive zips
+│   ├── raw/parquet/             # parsed, partitioned by year/month
+│   ├── processed/v1/            # feature tables, partitioned by year/month
+│   │   └── SOLUSDT/1m/
+│   │       ├── year=2023/
+│   │       └── year=2024/
+│   ├── pipeline/                # download.py, parse.py, features.py, build.py, config.py
 │   ├── scripts/                 # synthetic sample data generator (dev/testing only)
-│   └── reports/                  # data-quality reports
+│   └── reports/                 # data-quality reports
 ├── model/
-│   ├── body/                    # GRUEncoder (gru_encoder.py), SimpleMLP reference (simple_mlp.py)
-│   ├── heads/                    # Phase B decision head goes here
-│   ├── config/                    # run_config.py, splits.py, features.md
-│   ├── data/loader.py              # CausalWindowDataset — windowing, splits, targets
-│   ├── checkpoints/                 # load.py (mismatch guard), latest.json (pointer)
-│   ├── inference/                    # engine.py, CONTRACT.md (frozen JSON schema)
-│   ├── runs/                          # per-run artifacts + compare.py CLI
-│   ├── baselines/                      # persistence_2024.json
-│   ├── tests/test_smoke.py              # fast end-to-end wiring test
-│   ├── tests/test_gru_encoder.py        # GRU body unit tests
-│   ├── INTERFACE.md                      # model contract (forward/compute_loss)
-│   └── train.py                           # generic training loop
+│   ├── body/                    # GRUEncoder (gru_encoder.py), GRUEncoderFixedVar, SimpleMLP, diagnose_overfitting
+│   ├── heads/                   # Phase B decision head goes here
+│   ├── config/                  # run_config.py, splits.py, features.md
+│   ├── data/                    # loader.py — CausalWindowDataset (windowing, splits, targets)
+│   ├── checkpoints/             # load.py (mismatch guard), latest.json (pointer, gitignored)
+│   ├── inference/               # engine.py (ModelInferenceEngine), CONTRACT.md (frozen JSON schema)
+│   ├── reporting/               # summary.py — build_summary() (markdown per run)
+│   ├── runs/                    # per-run artifacts (gitignored, synced from Drive)
+│   ├── baselines/               # persistence_2024.json (baseline NLL = 0.507770)
+│   ├── tests/                   # test_smoke.py, test_gru_encoder.py
+│   ├── INTERFACE.md             # model contract (forward/compute_loss)
+│   └── train.py                 # generic training loop (git commit, Drive mirror, summary)
 └── ui/
-    ├── backend/                            # FastAPI replay server
-    └── frontend/                            # React/TS scrubber
+    ├── backend/                 # FastAPI replay server (ModelInferenceEngine)
+    └── frontend/                # React/TS scrubber
 ```
 
-**Why it's split this way:** `data/` doesn't know the model exists — it just emits a feature table. `ui/` only knows the JSON contract emitted by inference, not the model's internals. `model/` is deliberately the only folder expected to change shape as architecture evolves — `body/`, `heads/`, and `inference/` are separated precisely so a radical rework stays contained there without touching data or UI. See `02-agent-musts.md` for the hard rule this implies.
+**Training loop:** `model/train.py` → `model/data/loader.py` → `model/body/gru_encoder.py`.
+
+**Checkpoint pipeline:** Colab → Drive → Drive for Desktop → `pull_checkpoint.py` → `model/runs/` + `experiments.md`.
+
+**See `03-current-status-and-next-steps.md` § Workflow for the full 15-step iteration loop.**
+
+**Why it's split this way:** `data/` doesn't know the model exists — it just emits a feature table. `ui/` only knows the JSON contract emitted by inference, not the model's internals. `model/` is deliberately the only folder expected to change shape as architecture evolves — `body/`, `heads/`, `reporting/`, and `inference/` are separated precisely so a radical rework stays contained there without touching data or UI. `scripts/` is the operational layer (Drive sync, analysis, watcher) — it talks to `model/reporting/` for logic but has no model internals. `colab_train.ipynb` is the Colab entry point, kept at repo root for single-click badge-open. `experiments.md` is the durable decision journal, auto-populated but human-editable. See `02-agent-musts.md` for the hard rules this implies.
 
 **Existing adjacent infra reused, not rebuilt:**
 - [[sol-recorder]] — multi-exchange L2/trade capture; not yet joined into `data/processed/` (order-book columns are NaN placeholders on purpose).

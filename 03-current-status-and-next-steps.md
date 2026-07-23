@@ -39,26 +39,144 @@ See `01-project-overview.md` for what this project is and why it's structured th
 - Phase 7 (hygiene): stale `model/checkpoints/latest.json` deleted; `.gitignore` extended (runs/, sample/, pytest_cache/); `example.yaml` comment corrected; unused `get_available_range` removed from `data_service.py`.
 - Phase 8 (verification): 29/29 pass, 9.3 s.
 
+**Resolved: Model-backed Inference Engine built & UI integrated (2026-07-22).**
+- `model/inference/engine.py` (`ModelInferenceEngine`) implemented: loads checkpoints via `model/checkpoints/load.py` / `latest.json`, computes windowed GRU batch inference, and produces contract-compliant JSON.
+- `ui/backend/state.py` updated to instantiate `ModelInferenceEngine` instead of `SimulatedInferenceEngine`.
+
+**Resolved: Cloud/Colab training harness & automated checkpoint sync (2026-07-22).**
+- Created `colab_train.ipynb` for GPU training runs.
+- Added `scripts/pull_checkpoint.py`, `scripts/watch_checkpoints.py`, and `scripts/analyze_run.py` to automatically sync checkpoints from Google Drive, write `latest.json`, and log training runs into `experiments.md`.
+
+**Resolved: First Phase A training runs & overfitting diagnostics (2026-07-22).**
+- Run `phaseA_20260722_101708`: `GRUEncoder` (hidden size 32, ~5K params), achieved best val NLL **0.493065** (baseline delta **-0.014705** vs 0.507770 baseline).
+- Run `phaseA_20260722_103726`: `GRUEncoderFixedVar` (hidden size 32, fixed variance baseline head), achieved best val NLL **0.491322** (baseline delta **-0.016448**).
+- Created `model/body/diagnose_overfitting.py` to evaluate train vs val generalization across stride intervals, identifying high-capacity overfitting issues at h=64 and confirming h=32 stability.
+
+**Resolved: Loop hardening — reproducibility, resilience, auto-documentation (2026-07-22).**
+
+Five friction points eliminated from the Colab → Drive → local training loop:
+
+1. **Git commit provenance.** Every run records the exact code that produced it.
+   - `train.py` calls `_git_commit()`: reads `GIT_COMMIT` env var (set by Colab Cell 1 via GitHub API), falls back to `git rev-parse HEAD` locally.
+   - Written to `run_dir/provenance.json` at run start (separate from `config.yaml` so hyperparams stay pure).
+   - Embedded in every checkpoint under `data_meta.git_commit`.
+   - Colab Cell 1 fetches the commit SHA from `api.github.com/repos/.../commits/main` and sets `os.environ['GIT_COMMIT']`.
+
+2. **Mid-run Drive mirror.** A Colab disconnect no longer loses the entire run.
+   - `train.py` has `_mirror_to_drive()`: copies `best.pt`, `metrics.jsonl`, `config.yaml`, and `summary.md` to Drive whenever `DRIVE_CKPT_DIR` env var is set (non-smoke-runs only).
+   - Triggered on every best save AND every periodic epoch checkpoint (every 5 epochs).
+   - Colab Cell 1 sets `os.environ['DRIVE_CKPT_DIR'] = DRIVE_CKPT`.
+   - Cell 7 still runs a final idempotent sweep — mid-run mirror ensures ≤5 epochs lost on disconnect.
+   - `pull_checkpoint.py` Unicode `✓` → `[OK]` fixed (Windows cp1252 crash).
+
+3. **Auto `summary.md` per run.** One markdown file tells the whole story — no more stitching from chat.
+   - New module `model/reporting/summary.py` with `build_summary(run_dir) -> str`.
+   - Contents: metadata (git commit, model class, hyperparams), data provenance, best checkpoint metrics, full epoch trajectory table, analysis (MSE trend, variance-shortcut flags, baseline delta).
+   - Written to `run_dir/summary.md` at end of `train()` (non-smoke only).
+   - `scripts/analyze_run.py` refactored to use `build_summary`; gained `--write` flag.
+   - `pull_checkpoint.py` syncs `{run}_summary.md` ↔ `summary.md`.
+
+4. **Append-only `experiments.md`.** Durable experiment journal in the repo.
+   - New `experiments.md` at repo root with header template.
+   - `pull_checkpoint.py` appends one section per run when `summary.md` exists — includes full summary + a concise `> best_loss/epoch | mse | var_mean` result line.
+   - Deduplicated: checks if run-section header already exists before appending.
+
+5. **Data copy caching.** Cell 1 skips the 1–2 min Drive copy when data hasn't changed.
+   - `_drive_fingerprint()` computes a JSON fingerprint of all `year=*` partitions (mtime + total parquet size per partition).
+   - Saved to `.drive_fingerprint` after copy; compared on next session.
+   - Copy skipped if fingerprint matches AND `year=` partitions already present locally.
+   - Junk files (non-`year=` items, including leftover notebook copies) still cleaned up each session.
+
+**New files created:**
+- `model/reporting/__init__.py`, `model/reporting/summary.py` — `build_summary()`
+- `experiments.md` — append-only experiment journal (repo root)
+
 **Deliberately deferred (not oversights):**
 - Order-book feature join (`ob_imbalance`, `ob_depth_*`, `ob_spread`) from [[sol-recorder]] — placeholder NaN columns, not required for Phase A.
 - Phase B reward/target design for the decision head — coupled to model output, scoped as model-design work, not scaffolding.
 - CONTRACT.md doc says v1.1 while `contract_version.py` is "1.0" (doc/code drift; harmless — the guard compares checkpoint vs code constant, both "1.0"). Reconcile when the contract next changes for real (e.g. model-backed inference).
-- The UI's inference engine is still `SimulatedInferenceEngine` (heuristic, no weights) — hot-reload watches `latest.json` but reloads the simulator. Step "UI inspection of the trained model" requires a model-backed engine in `model/inference/engine.py` (contained change; not yet built).
 - `tests/test_smoke.py` still imports `CONTRACT_VERSION` directly rather than testing the integration path — fine for a smoke test, but the contract-inference integration (`model/inference/test_contract.py`) covers the full pipeline separately.
-- `model/checkpoints/latest.json` has been deleted (was a stale smoke-test pointer). It will be re-created by the next training run's best checkpoint save. Until then, the UI shows "No checkpoint found" — expected.
 - `train.py`'s optimizer section (line 352) hardcodes `torch.optim.Adam` with only `lr` from config — no `weight_decay`, no AdamW, no scheduler. This constrains architecture iteration: you cannot add weight decay, change optimizer, or apply LR scheduling without editing `train.py` (scaffolding). If the current run confirms capacity/regularization as the lever, exposing `optimizer_kwargs` from config would unblock the next step without breaking existing runs. (Flagged per 02-agent-musts.md rule 15: flag scaffolding gaps rather than working around them silently.)
 
 ---
 
-## Workflow / Iteration Loop (how any future session should run)
+## Workflow / Iteration Loop (Colab-based)
 
-1. Edit `model/body/` (architecture) and/or `model/heads/` (Phase B decision head, once reached).
-2. Write or copy a run config (`model/config/run_config.py` fields — phase, window_length, horizon, feature_columns, split_config_ref, batch_size, lr, optimizer, num_epochs, seed, model_class as dotted path, horizon_weighting, notes).
-3. Run smoke test first: `python -m model.train --config path.yaml --smoke-test-first`.
-4. Run the real training job: `python -m model.train --config path.yaml`. Long-running, launched from terminal/background.
-5. Watch `model/runs/{run_name}/metrics.jsonl`; compare against baseline_delta and across past runs via `python -m model.runs.compare`.
-6. Point the UI scrubber at the run (auto-picks up `latest.json`) and manually inspect: does the predicted trajectory look reasonable, does uncertainty behave sensibly, does anything resembling swing-sensitivity or trap-caution show up (expect weak/absent until Phase B exists — early Phase A runs are just about "does it beat the baseline and look non-degenerate").
-7. Iterate on `model/body/`/`model/heads/` based on what's observed; scaffolding should not need to change during this loop.
+The full loop spans three environments: local Windows (code edits), Colab T4 (GPU training), Google Drive (data + checkpoints). No manual file transfers at any step.
+
+### Step-by-step
+
+1. **Edit code locally** in `model/body/`, `model/data/`, `model/config/`, or `configs/*.yaml`. Also update `colab_train.ipynb` if the notebook itself needs changes.
+
+2. **Push to GitHub:**
+   ```bash
+   git add -A
+   git commit -m "describe change"
+   git push
+   ```
+
+3. **Open Colab from the badge** in `colab_train.ipynb` (always fetches latest notebook from GitHub). Runtime → T4 GPU.
+
+4. **Cell 0**: Mount Drive (`drive.mount('/content/drive')`).
+
+5. **Cell 1**: Download latest code tarball from GitHub → record `GIT_COMMIT` via GitHub API → set `DRIVE_CKPT_DIR` env var → copy feature data from Drive to local SSD (skipped if fingerprint cache matches) → clean junk files.
+
+6. **Cell 2**: Verify GPU (T4, ~16 GB VRAM).
+
+7. **Cell 3**: Install deps (pandas, pyarrow, pyyaml — torch is preinstalled).
+
+8. **Cell 4**: Smoke test — 2 epochs, truncated batches. Validates config, data loading, model init, and a few forward/backward passes. Run name gets `_smoketest` suffix; does NOT write to Drive or `experiments.md`, does NOT write `summary.md`.
+
+9. **Cell 5**: Full Phase A training (30 epochs):
+   - `provenance.json` written at start (git commit, timestamp)
+   - `config.yaml` snapshot in run directory
+   - Every 5 epochs, on best val loss, and at final epoch: checkpoint saved locally AND mirrored to Drive (`_mirror_to_drive`)
+   - `summary.md` written at end (non-smoke)
+   - If Colab disconnects mid-run: latest best.pt + metrics.jsonl already on Drive — worst case 5 epochs lost
+
+10. **Cell 6a–6b**: Diagnostic run with `GRUEncoderFixedVar` (15 epochs, same mirror behavior).
+
+11. **Cell 7**: Final full-sweep copy to Drive (idempotent — mid-run mirror may have already written these files). Copies: `{run}_best.pt`, `{run}_metrics.jsonl`, `{run}_config.yaml`, `{run}_summary.md`, `latest.json`, `best.pt`.
+
+12. **Locally**: Google Drive for Desktop auto-syncs `G:\My Drive\ModelProject\checkpoints\`.
+
+13. **Sync and analyze:**
+    ```bash
+    python scripts/pull_checkpoint.py        # Drive → model/runs/ + experiments.md
+    python scripts/analyze_run.py            # print (and --write) summary.md
+    ```
+    Or leave running:
+    ```bash
+    python scripts/watch_checkpoints.py      # polls Drive every 30s, auto-syncs + analyzes
+    ```
+
+14. **Read** `experiments.md` or per-run `summary.md` for results. Decide next change.
+
+15. **Repeat from step 1.**
+
+### Data that persists across sessions
+
+| Data | Location | Method |
+|---|---|---|
+| Feature parquet files | `G:\My Drive\ModelProject\year=*/` | Permanent; never modified by training |
+| Checkpoints + metrics | `G:\My Drive\ModelProject\checkpoints/` | Written by Colab Cells 5/6/7; synced by Drive for Desktop |
+| Code | GitHub `sandeep999-cyber/solusdt-ml-trader` | git push; Colab downloads tarball |
+| Run artifacts (local) | `model/runs/{run_name}/` | Synced by `pull_checkpoint.py` |
+| Experiment journal | `experiments.md` (repo root) | Auto-appended by `pull_checkpoint.py` |
+| Colab VM files | `/content/ModelProject/` | Destroyed when Colab session ends |
+
+### What each run directory contains
+
+```
+model/runs/phaseA_YYYYMMDD_HHMMSS/
+  config.yaml          ← frozen hyperparameter snapshot
+  provenance.json      ← {run_name, git_commit, started}
+  metrics.jsonl        ← one JSON line per epoch (train_loss, val_loss, nll, mse, var_mean, baseline_delta)
+  summary.md           ← auto-generated markdown (metadata, trajectory table, variance-shortcut flags)
+  checkpoints/
+    best.pt            ← best val loss checkpoint (overwritten)
+    epoch_0000.pt      ← periodic checkpoints (epoch 0, 5, 10, ...)
+```
 
 ---
 
@@ -69,10 +187,9 @@ See `01-project-overview.md` for what this project is and why it's structured th
 3. ~~Split strategy~~ — done: train starts 2023-01-01, val/test untouched.
 4. ~~Build the real Phase A body~~ — done: `model/body/gru_encoder.py` (GRUEncoder), 29/29 tests, smoke run passed.
 5. ~~Scaffolding audit (19 findings)~~ — done, see Resolved above.
-6. **Launch the first real Phase A training run** (human-owned, ~2 h on CPU):
-   `python -m model.train --config configs/phase_a_gru.yaml --smoke-test-first`
-   Then watch `model/runs/{run_name}/metrics.jsonl` — success = val NLL clearly below the 0.507770 baseline (negative `baseline_delta`), no NaN halt.
-7. Build the model-backed inference engine in `model/inference/engine.py` (loads best checkpoint via `model/checkpoints/load.py`, emits the frozen JSON contract) and inspect the trained model in the UI scrubber: does the predicted trajectory look reasonable, does uncertainty rise in choppy periods, does anything resembling swing-sensitivity show up (expect weak/absent until Phase B).
-8. Only after Phase A looks reasonable: design Phase B's decision head and its cost-aware reward.
-
-**Scaffolding is done, audit complete, baseline recomputed, the real GRU body is in place and smoke-tested — the only thing left before the first long run is pressing enter on it.**
+6. ~~Launch the first real Phase A training run~~ — done: `phaseA_20260722_101708` (val NLL 0.493065) & `phaseA_20260722_103726` (val NLL 0.491322) both beat the 0.507770 baseline.
+7. ~~Build the model-backed inference engine~~ — done: `ModelInferenceEngine` in `model/inference/engine.py` integrated into `ui/backend/state.py`.
+8. ~~Loop hardening~~ — done: git commit provenance, mid-run Drive mirror, auto summary.md per run, experiments.md journal, data copy fingerprint caching. See Resolved section above.
+9. **Phase A Architecture Investigation**: The first two runs show MSE ≈ unconditional variance (~1.0185) — the GRU h32 with 24 technical-indicator features has learned zero predictive signal. The variance-shortcut pathology (NLL run improved baseline delta by −2.5% purely through variance inflation to ~1.09) was confirmed by the fixed-variance diagnostic run (MSE identical at ~1.016). Possible directions: add order-book features (currently NaN placeholders), try more complex architectures, or accept this as a feature ceiling and move to Phase B with a calibrated noise model.
+10. **UI Inspection & Trajectory Evaluation**: Run the UI scrubber (`launch.bat`) and inspect model-backed predictions, trajectory shapes, and uncertainty bounds on the 2024 val dataset.
+11. **Phase A Refinement / Phase B Design**: Evaluate Phase A architecture tweaks (window size, input features, regularization) vs proceeding to Phase B decision head and cost-aware reward.
