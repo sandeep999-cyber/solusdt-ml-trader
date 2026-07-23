@@ -64,6 +64,10 @@ def build_summary(
     """Build a markdown summary string for a completed training run."""
     if config is None:
         config = _load_config(run_dir)
+    # Handle RunConfig dataclass (from train.py) — convert to dict for .get() access
+    if hasattr(config, "__dataclass_fields__"):
+        from dataclasses import asdict
+        config = asdict(config)
     if data_meta is None:
         prov = _load_provenance(run_dir)
         git_commit = prov.get("git_commit", "")
