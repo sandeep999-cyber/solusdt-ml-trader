@@ -222,7 +222,7 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **R² formula confirmed:** `improvement` = % RMSE reduction = (1 - rmse_model/rmse_baseline) * 100. Therefore R² = 1 - (rmse_model/rmse_baseline)² = 1 - (1 - improvement/100)². The squared relationship is correct.
 - **Decision:** Run GRU walk-forward next (not GARCH) — it's cheaper and determines whether there's any nonlinear edge worth comparing against an econometric baseline.
 
-## D023: GRU walk-forward — nonlinear edge does not exist
+## D023: GRU walk-forward — regime-dependent, not uniformly dead
 - **Date:** 2026-07-23
 - **Context:** D022 predicted GRU walk-forward would likely evaporate. Ran 5-fold expanding window with GRU h32 (15 epochs, 100K training cap per fold).
 - **Fold-by-fold results:**
@@ -236,10 +236,11 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 | 5 | 87,705 | +10.14% (3 windows) | -5.04% | 0.193 |
 | **Stacked** | | **-57.81%** | **-3.76%** | **-1.49** |
 
-- **Pattern:** GRU is regime-sensitive — works in folds 1 and 4, catastrophically fails in folds 2 and 3. Fold 2 alone (-148%) destroys the stacked result. This is WORSE than Ridge, which failed gently (-3.76%).
-- **Conclusion:** The GRU's single-split +19.6% / R²≈0.354 was pure overfitting to the specific train/val period. The nonlinear edge does not exist. The 10-feature set has no robust predictive power for volatility — neither linear nor nonlinear.
-- **Pattern count:** FOUR single-split reversals now (D022 had three). The base rate is clear: single-split results in this codebase are not trustworthy.
-- **Decision:** The volatility prediction task is dead with the current feature set. Do not proceed with GARCH/HAR comparison, hyperparameter sweeps, or order-book features until a fundamentally different data source or task formulation is introduced.
+- **Error analysis (Folds 2-3):** Tail ratio 1.12-1.13x (all < 1.5x). Top-10% windows contribute 38-39% of MSE. Errors are **broad-based**, not concentrated in a few extreme events. The model predicts near-zero volatility during high-vol periods (actual vol ~1.7-2.0, predicted ~0.05-0.65).
+- **Pattern:** GRU works in folds 1 and 4 (stable vol regimes), catastrophically fails in folds 2 and 3 (high vol regimes). This is **regime-dependent failure**, not tail sensitivity.
+- **Nuanced conclusion:** The 10-feature set shows no robust *unconditional* volatility signal. The GRU exhibits regime-dependent performance — strong in some periods, catastrophic in others. The model learns a "low-vol regime" pattern and applies it everywhere, including during vol spikes. This is a different problem from "features are dead" — it points at regime-awareness as the fix.
+- **What this rules out:** The "features are dead" framing is too strong. The correct framing is: "10-feature unconditional volatility regression has no robust signal; GRU shows regime-dependent performance (strong in 2/4 folds, catastrophic in 2/4), consistent with regime instability — not yet distinguished from tail-event sensitivity."
+- **What this does NOT rule out:** GARCH/HAR (volatility's own autocorrelation structure) as a baseline. If GARCH generalizes, the problem is specifically these 10 features / this model class not capturing regime-conditional structure, not that volatility is inherently unpredictable. Run GARCH next.
 
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23
