@@ -8,15 +8,17 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
+- **Feature reformulation** — The 10 engineered features don't capture the autocorrelation structure that GARCH exploits from raw returns. Options: (1) add lagged returns as features, (2) use a model class that processes raw return sequences, (3) combine GARCH signals with the 10 features. Close: test at least one approach and compare against GARCH baseline. (Raised: 2026-07-23)
+
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
-- **Holdout sensitivity analysis** — The original concern was "is 2024 alone enough holdout?" A partial mitigation was applied: 2023 was added to the training set (now 20 months), while val/test stayed fixed at Sep–Nov and Nov–Jan 2024–2025. But the sensitivity analysis itself was never run: does val/test behavior actually change with train-set length? Without that test, we don't know if the extension helped or was just a checkbox. Close: train on 2023 only, evaluate on 2024-09+, and compare val metrics to the full-train run. If they're similar, the holdout is sufficient regardless of train length. (Raised: 2026-07-21)
+- **Holdout sensitivity analysis** — The original concern was "is 2024 alone enough holdout?" A partial mitigation was applied: 2023 was added to the training set (now 20 months), while val/test stayed fixed at Sep-Nov and Nov-Jan 2024-2025. But the sensitivity analysis itself was never run: does val/test behavior actually change with train-set length? Without that test, we don't know if the extension helped or was just a checkbox. Close: train on 2023 only, evaluate on 2024-09+, and compare val metrics to the full-train run. If they're similar, the holdout is sufficient regardless of train length. (Raised: 2026-07-21)
 
 ## Resolved
 
-- **Volatility prediction — all models fail** — Ridge(-3.76%), GRU(-57.81%), GARCH(-4.47%) all fail walk-forward. GARCH failure is definitive: volatility at 1-min horizon is not predictable from its own autocorrelation structure. Not a feature or model-class problem — signal doesn't exist. (Closed: 2026-07-23)
+- **Volatility prediction - GARCH shows weak but real signal** — GARCH(1,1) corrected: +4.79%, +1.27%, +1.19%, +0.68% across 4 folds (all CIs exclude 0). Persistence = 0.50. Volatility clustering exists at 1-min but is weak. 10 engineered features don't capture it (Ridge/GRU fail). GARCH works by using raw returns directly. Problem is features, not volatility. (Closed: 2026-07-23)
 
-- **GARCH/HAR baseline** — GARCH(1,1) walk-forward: -4.47%, R²=-0.091, CI [-4.54, -4.41]. Fails uniformly across all folds. Volatility clustering doesn't have predictive power at 1-min timescale for SOLUSDT. (Closed: 2026-07-23, D024)
+- **GARCH/HAR baseline** — GARCH(1,1) walk-forward CORRECTED: all folds positive, CIs exclude 0. Previous -4.47% was a horizon mismatch bug (1-step variance vs 12-step target). Corrected multi-step forecast shows +0.68% to +4.79% per fold. (Closed: 2026-07-23, D024)
 
 - **GRU regime-dependent behavior** — GRU works in folds 1,4 (+9.5%, +11.6%), fails catastrophically in folds 2,3 (-148%, -46%). Error analysis shows broad-based errors (tail ratio 1.12-1.25x), not tail-concentrated. Model predicts near-zero vol during high-vol periods. (Closed: 2026-07-23, D023)
 
