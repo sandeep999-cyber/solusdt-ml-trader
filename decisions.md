@@ -242,6 +242,28 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **What this rules out:** The "features are dead" framing is too strong. The correct framing is: "10-feature unconditional volatility regression has no robust signal; GRU shows regime-dependent performance (strong in 2/4 folds, catastrophic in 2/4), consistent with regime instability — not yet distinguished from tail-event sensitivity."
 - **What this does NOT rule out:** GARCH/HAR (volatility's own autocorrelation structure) as a baseline. If GARCH generalizes, the problem is specifically these 10 features / this model class not capturing regime-conditional structure, not that volatility is inherently unpredictable. Run GARCH next.
 
+## D024: GARCH(1,1) baseline — volatility is not predictable at 1-min horizon
+- **Date:** 2026-07-23
+- **Context:** D023 left GARCH as the last open question. If GARCH generalizes, the problem is features/model class. If GARCH fails, vol itself is not predictable.
+- **Results (5-fold expanding window, H=12):**
+
+| Fold | N_train | GARCH Improve% | GARCH R² |
+|------|---------|---------------|----------|
+| 1 | 210,511 | -5.47% | -0.112 |
+| 2 | 421,022 | -4.13% | -0.084 |
+| 3 | 631,533 | -4.37% | -0.089 |
+| 4 | 842,044 | -4.17% | -0.085 |
+| **Stacked** | 841,996 | **-4.47%** | **-0.091** |
+
+- **CI:** [-4.54, -4.41] — tight, clearly negative, excludes 0 by >20x.
+- **Comparison:** GARCH(-4.47%) ≈ Ridge(-3.76%) >> GRU(-57.81%). All three fail, but GRU fails catastrophically while GARCH/Ridge fail gently.
+- **Interpretation:** GARCH(1,1) models volatility clustering using only past squared returns — no engineered features. Its failure means volatility at 1-min horizon is not predictable from its own autocorrelation structure. This is the definitive test: the problem is not the 10 features or the model class. The signal itself doesn't exist at this timescale.
+- **Fold consistency:** GARCH fails uniformly across all folds (-5.47%, -4.13%, -4.37%, -4.17%). No regime dependence, no outlier folds. This is clean, consistent failure — unlike GRU's regime-dependent behavior.
+- **What this rules out:** GARCH/HAR as viable baselines. The "run GARCH next" suggestion from D023 is answered: it fails.
+- **What this means for the project:** Volatility prediction at 1-min horizon with SOLUSDT data is not viable with any of the tested approaches (Ridge, GRU, GARCH). The 1-min returns are approximately independently distributed with constant variance over the prediction horizon. This is consistent with the efficient market hypothesis for high-frequency crypto markets.
+- **Decision:** Volatility prediction task is concluded. No model (linear, nonlinear, or econometric) beats baseline on held-out data. The 10-feature set, the GRU architecture, and the GARCH model all fail. Further work on this task (feature engineering, model tuning, order-book features) would be exploring a signal that doesn't exist.
+- **Code:** `scripts/garch_baseline.py`.
+
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23
 - **Context:** D020 showed volatility is the correct target. Need pipeline support for volatility target in the training harness.

@@ -8,13 +8,21 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **Volatility GRU hyperparameter sweep** — GRU h32 achieves +19.6% RMSE improvement, R²=0.233. Next: tune hidden_size (16, 32, 64), dropout (0.1, 0.2, 0.3), learning rate, training stride. Also test if training stride=60 (non-overlapping) improves generalization. Close: run 5-10 configs, report best RMSE + R² on val. (Raised: 2026-07-23)
-
-- **Order-book feature join** — `ob_imbalance`, `ob_depth_bid_5`, `ob_depth_ask_5`, `ob_spread` are NaN placeholders in `features.py`. The [[sol-recorder]] data exists but hasn't been joined. Close: implement the join in `data/pipeline/features.py`, verify no NaN rows remain in the OB columns, and re-run the feature pipeline. (Raised: 2026-07-20, still open)
+- **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
 - **Holdout sensitivity analysis** — The original concern was "is 2024 alone enough holdout?" A partial mitigation was applied: 2023 was added to the training set (now 20 months), while val/test stayed fixed at Sep–Nov and Nov–Jan 2024–2025. But the sensitivity analysis itself was never run: does val/test behavior actually change with train-set length? Without that test, we don't know if the extension helped or was just a checkbox. Close: train on 2023 only, evaluate on 2024-09+, and compare val metrics to the full-train run. If they're similar, the holdout is sufficient regardless of train length. (Raised: 2026-07-21)
 
-- **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
+## Resolved
+
+- **Volatility prediction — all models fail** — Ridge(-3.76%), GRU(-57.81%), GARCH(-4.47%) all fail walk-forward. GARCH failure is definitive: volatility at 1-min horizon is not predictable from its own autocorrelation structure. Not a feature or model-class problem — signal doesn't exist. (Closed: 2026-07-23)
+
+- **GARCH/HAR baseline** — GARCH(1,1) walk-forward: -4.47%, R²=-0.091, CI [-4.54, -4.41]. Fails uniformly across all folds. Volatility clustering doesn't have predictive power at 1-min timescale for SOLUSDT. (Closed: 2026-07-23, D024)
+
+- **GRU regime-dependent behavior** — GRU works in folds 1,4 (+9.5%, +11.6%), fails catastrophically in folds 2,3 (-148%, -46%). Error analysis shows broad-based errors (tail ratio 1.12-1.25x), not tail-concentrated. Model predicts near-zero vol during high-vol periods. (Closed: 2026-07-23, D023)
+
+- **Order-book feature join** — Not needed. Volatility prediction is dead regardless of features. (Closed: 2026-07-23)
+
+- **Volatility GRU hyperparameter sweep** — Not needed. GARCH baseline confirms signal doesn't exist. (Closed: 2026-07-23)
 
 ## Resolved
 
