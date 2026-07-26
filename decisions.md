@@ -205,6 +205,7 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 
 - **Conclusion:** Single-split shows real but modest signal for volatility (Ridge R²=0.214). GRU shows strong nonlinear edge (+19.6%, R²=0.353). **BUT: walk-forward (D022) shows Ridge stacked R²=-0.077.** Single-split results are not robust. GRU walk-forward still needed.
 - **Pivot decision:** Kill all direction tasks. Volatility forecasting is the new target. The features capture information about upcoming return magnitude (volatility clustering), not direction.
+- **Rank-deficiency caveat:** These Ridge results were fit on the rank-deficient 10-feature set (condition number inf, rank 9/10). The specific numbers may be unstable due to near-duplicate features, but the direction (Ridge has some volatility signal in single-split, fails in walk-forward) likely survives. D026 showed that replacing the 10 features with 12 squared lagged returns improves Ridge from -3.76% to +6.75% walk-forward.
 - **Code:** `scripts/volatility_ridge.py`, `scripts/volatility_gru_train.py`.
 
 ## D022: Metric correction + walk-forward — single-split results are not robust
@@ -219,6 +220,7 @@ Architecture and design choices with reasoning. One entry per real reversal or s
   - Stacked: RMSE=0.242, improvement=-3.76%, R²=-0.077
   - Signal does NOT survive temporal distribution shift
 - **Implication for GRU:** The GRU's un-walk-forward-tested +19.6% / R²=0.353 should be treated as the LEAST trustworthy number. Given the pattern of 3 reversals, expect GRU walk-forward to also evaporate or reverse.
+- **Rank-deficiency caveat:** The original 10-feature set had condition number inf (rank 9/10, `ob_imbalance` all NaN, `log_return`/`return_pct` at 0.999988 correlation). Ridge regularization handled this numerically, but coefficients may have arbitrarily split weight between near-duplicate features. The direction of findings (Ridge fails on volatility) likely survives, but the specific numbers were fit on a rank-deficient matrix.
 - **R² formula confirmed:** `improvement` = % RMSE reduction = (1 - rmse_model/rmse_baseline) * 100. Therefore R² = 1 - (rmse_model/rmse_baseline)² = 1 - (1 - improvement/100)². The squared relationship is correct.
 - **Decision:** Run GRU walk-forward next (not GARCH) — it's cheaper and determines whether there's any nonlinear edge worth comparing against an econometric baseline.
 
@@ -314,7 +316,7 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 
 - **Revised conclusion:** GARCH's edge is informational, not structural. A Ridge model with 12 squared lagged returns outperforms GARCH(1,1) in every fold and on held-out data. However, Ridge is NOT "doing the same thing as GARCH, just better" — the fold-pattern mismatch shows they exploit different aspects of the data. GARCH's recursive variance equation and Ridge's direct linear prediction of realized vol are different mechanisms that both access shock-magnitude information.
 
-- **What this means for the project:** The 10-feature set was the bottleneck, not the model class. The fix is feature engineering: add squared lagged returns. Ridge with 12 squared lags achieves +4-9% improvement with tight CIs, confirmed on held-out data. This is a viable, strong baseline for the project. The original 10 features should be dropped or replaced (they're rank-deficient and add noise).
+- **What this means for the project:** For the volatility task specifically, the 10-feature set was the bottleneck, not the model class. The fix is feature engineering: add squared lagged returns. Ridge with 12 squared lags achieves +4-9% improvement with tight CIs, confirmed on held-out data. This is a viable, strong baseline for the volatility task. The original 10 features should be dropped or replaced for volatility prediction (they're rank-deficient and add noise). The return-prediction task (+26.6% OLS from earlier) was not re-tested with squared lags — that's a separate experiment.
 
 - **Code:** `scripts/ridge_squared_lags.py`.
 

@@ -8,7 +8,9 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **Feature reformulation** — D026 showed Ridge with 12 squared lagged returns CRUSHES GARCH (+4-9% per fold, all CIs exclude 0). The original 22 features were hurting via multicollinearity. Next: (1) test whether squared lags + selective original features (without collinear ones) improves further, (2) run GRU with squared lags as input to see if the nonlinear model can beat linear, (3) use this as the new baseline for the project. (Raised: 2026-07-23, updated after D026)
+- **GRU with squared lags** — The earlier GRU catastrophic failure (-57.81%) was on the rank-deficient 10-feature set. Ridge with squared lags is a clean, well-conditioned, verified-informative feature set. Test: can GRU extract this signal via gradient descent, or does the optimization/regularization problem persist even with better inputs? This disambiguates "the GRU's problem was the features" from "the GRU has its own training pathology." (Raised: 2026-07-23)
+
+- **Feature reformulation** — D026 showed Ridge with 12 squared lagged returns CRUSHES GARCH (+4-9% per fold, all CIs exclude 0, held-out confirmed at +6.78%). The original 22 features were hurting via multicollinearity (cond=inf). Next: (1) test GRU with squared lags, (2) test squared lags on return-prediction task (was +26.6% with original features). (Raised: 2026-07-23, updated after D026)
 
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
