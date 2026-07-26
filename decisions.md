@@ -245,14 +245,16 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 ## D024: GARCH(1,1) baseline - horizon-corrected: volatility clustering exists but is weak
 - **Date:** 2026-07-23
 - **Context:** D023 left GARCH as the last open question. Previous GARCH run had a horizon mismatch bug: 1-step conditional variance was compared against 12-step realized vol without iterating the GARCH recursion forward. Corrected by computing multi-step forecast: sigma2(t+h) = omega + (alpha+beta)*sigma2(t+h-1), summing h steps, averaging.
-- **Fold-by-fold results (CORRECTED):**
+- **Fold-by-fold results with CIs (CORRECTED):**
 
-| Fold | N_train | GARCH Improve% | 95% CI | R2 | Persistence |
-|------|---------|---------------|--------|-----|-------------|
+| Fold | N_train | Improvement | 95% CI | R2 | Persistence |
+|------|---------|------------|--------|-----|-------------|
 | 1 | 210,511 | +4.79% | [+4.49, +5.11] | 0.094 | 0.500 |
 | 2 | 421,022 | +1.27% | [+0.95, +1.58] | 0.025 | 0.500 |
 | 3 | 631,533 | +1.19% | [+0.88, +1.52] | 0.024 | 0.500 |
 | 4 | 842,044 | +0.68% | [+0.38, +0.99] | 0.014 | 0.500 |
+
+- **CI assessment:** All CIs exclude 0. Lower bounds range from +0.38% (Fold 4) to +4.49% (Fold 1). The CIs are tight (width ~0.6pp for Folds 2-4, ~0.6pp for Fold 1). The signal is statistically significant but modest. The declining improvement with more training data (4.79% -> 0.68%) suggests the signal weakens as the baseline stabilizes.
 
 - **Stacked result** (-0.99%) is misleading: the baseline shifts across folds (same artifact as Ridge/GRU stacked results). Per-fold comparison is the honest metric.
 - **Key findings:**
@@ -263,6 +265,26 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **Revised conclusion:** The previous "volatility is not predictable" verdict was wrong - it was an artifact of the horizon mismatch. The correct conclusion: volatility clustering exists at 1-min for SOLUSDT, but it's weak. The 10 engineered features don't capture it (Ridge/GRU fail). GARCH captures it slightly by using raw return history directly. The features, not volatility itself, are the bottleneck.
 - **Implications:** This changes the project direction. The problem is not "volatility is unpredictable" (EMH-consistent). The problem is "the 10 engineered features don't capture the autocorrelation structure that GARCH exploits." This points at feature engineering or a different model class that uses raw returns, not the current 10-feature set.
 - **Code:** `scripts/garch_baseline.py`.
+
+## D025: Ridge+lagged-returns — GARCH's edge is structural, not informational
+- **Date:** 2026-07-23
+- **Context:** D024 showed GARCH beats the constant-variance baseline (+0.68% to +4.79%). The natural next question: can a linear model recover GARCH's edge when given lagged returns as explicit features? This disambiguates "does the information help" from "does the architecture help."
+- **Setup:** Ridge with 22 features (12 lagged returns + 10 original), standardized, walk-forward 5-fold.
+- **Results:**
+
+| Fold | GARCH | Ridge (10 feat) | Ridge+12 lags |
+|------|-------|-----------------|---------------|
+| 1 | +4.79% | -0.36% | **-6.70%** |
+| 2 | +1.27% | -19.69% | **-14.91%** |
+| 3 | +1.19% | +1.86% | +0.02% |
+| 4 | +0.68% | +5.35% | +1.74% |
+
+- **Finding:** Ridge+lags does NOT recover GARCH's edge. Adding 12 lagged returns to 10 features makes Ridge *worse* in folds 1-2 (noise injection). Fold 5 is an artifact (2 test windows).
+- **What this disambiguates:**
+  1. The GRU already had sequential return information (returns were one of the 10 features, processed via recurrence). Adding explicit lagged returns to Ridge doesn't help either. So the GRU's -57.81% wasn't about missing return features — it's about optimization/regularization on this specific data.
+  2. GARCH's edge comes from its *specific structural inductive bias* (squared-return feedback via alpha), not from "having access to returns." A linear model with the same information can't replicate it because the relationship is nonlinear and the model has no inductive bias for it.
+- **Implications:** The "feature reformulation" direction from D024 is unlikely to work by adding lagged returns alone. The problem isn't what information is available — it's that the models (Ridge, GRU) can't learn the specific nonlinear relationship that GARCH encodes by construction. GARCH works because it has the right equation structure, not because it has more or better information.
+- **Code:** `scripts/ridge_lagged_returns.py`.
 
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23
