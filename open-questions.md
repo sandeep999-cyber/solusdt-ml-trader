@@ -8,13 +8,17 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **GRU with squared lags** — The earlier GRU catastrophic failure (-57.81%) was on the rank-deficient 10-feature set. Ridge with squared lags is a clean, well-conditioned, verified-informative feature set. Test: can GRU extract this signal via gradient descent, or does the optimization/regularization problem persist even with better inputs? This disambiguates "the GRU's problem was the features" from "the GRU has its own training pathology." (Raised: 2026-07-23)
-
-- **Feature reformulation** — D026 showed Ridge with 12 squared lagged returns CRUSHES GARCH (+4-9% per fold, all CIs exclude 0, held-out confirmed at +6.78%). The original 22 features were hurting via multicollinearity (cond=inf). Next: (1) test GRU with squared lags, (2) test squared lags on return-prediction task (was +26.6% with original features). (Raised: 2026-07-23, updated after D026)
-
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
 - **Holdout sensitivity analysis** — The original concern was "is 2024 alone enough holdout?" A partial mitigation was applied: 2023 was added to the training set (now 20 months), while val/test stayed fixed at Sep-Nov and Nov-Jan 2024-2025. But the sensitivity analysis itself was never run: does val/test behavior actually change with train-set length? Without that test, we don't know if the extension helped or was just a checkbox. Close: train on 2023 only, evaluate on 2024-09+, and compare val metrics to the full-train run. If they're similar, the holdout is sufficient regardless of train length. (Raised: 2026-07-21)
+
+- **Squared lags on return-prediction task** — Ridge with squared lags works for volatility (+6.78% held-out). The return-prediction task (+26.6% OLS with original features) was not re-tested with squared lags. Worth checking if squared lags help there too. (Raised: 2026-07-23)
+
+## Resolved
+
+- **GRU with squared lags** — TESTED (D027). GRU fails catastrophically (-37.11% held-out) even with same clean features Ridge succeeds on (+6.78%). GRU has its own training pathology, independent of feature quality. Closed. (Closed: 2026-07-23)
+
+- **Feature reformulation** — D026 showed Ridge with 12 squared lagged returns CRUSHES GARCH (+4-9% per fold, all CIs exclude 0, held-out confirmed at +6.78%). D027 confirmed the GRU can't exploit these features. Ridge with squared lags is the strong, verified baseline. (Closed: 2026-07-23)
 
 ## Resolved
 

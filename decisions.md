@@ -320,6 +320,26 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 
 - **Code:** `scripts/ridge_squared_lags.py`.
 
+## D027: GRU+squared-lags — GRU has its own training pathology (Outcome B)
+- **Date:** 2026-07-23
+- **Context:** D026 showed Ridge with 12 squared lags crushes GARCH (+6.78% held-out). The earlier GRU catastrophic failure (-57.81%) was on rank-deficient features. Test: does GRU recover the signal with clean, well-conditioned features?
+- **Setup:** Single-layer GRU (hidden=32, dropout=0.2, 30 epochs, early stopping), MSE loss, same verified windowing as Ridge (stride=60, 2-bar gap, 12 squared lags as sequence input).
+- **Results:**
+
+| Fold | Ridge+squared | GRU+squared |
+|------|--------------|-------------|
+| 1 | +8.71% | **-42.79%** |
+| 2 | +7.15% | **-95.49%** |
+| 3 | +4.12% | **-69.90%** |
+| 4 | +6.75% | **-57.90%** |
+| **Held-out** | **+6.78%** [+4.36, +9.08] | **-37.11%** [-40.40, -33.87] |
+
+- **Outcome B confirmed:** The GRU fails catastrophically even with the same clean, well-conditioned, informative features that Ridge succeeds on. Held-out: -37.11% CI [-40.40, -33.87] — the GRU's predictions are WORSE than predicting the unconditional variance.
+- **What this isolates:** The GRU's earlier catastrophic failure was NOT about the rank-deficient features. The GRU has its own training pathology that persists even with clean inputs. Ridge achieves +6.78% with the same features; GRU achieves -37.11%. The problem is the GRU's optimization dynamics, not feature quality.
+- **Root cause (from D024 analysis):** Gradients are real but tiny (~13% weight movement over 30 epochs). GD fits training noise before signal. The GRU's recurrent structure makes the optimization landscape harder to navigate than Ridge's closed-form solution. This is a fundamental limitation of gradient-based training on this small, noisy dataset, not a hyperparameter or feature engineering issue.
+- **Implications:** The GRU architecture is not viable for this task as currently trained. Ridge with squared lags is the stronger model. Further GRU work would need to address the optimization pathology (e.g., different architecture, pre-training, curriculum learning) rather than feature engineering.
+- **Code:** `scripts/gru_squared_lags.py`.
+
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23
 - **Context:** D020 showed volatility is the correct target. Need pipeline support for volatility target in the training harness.
