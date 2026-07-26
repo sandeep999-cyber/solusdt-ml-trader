@@ -16,6 +16,10 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Resolved
 
+- **Regime features** — Tested rolling RV tercile (calm/normal/choppy) both as added feature (+6.79% held-out, delta +0.01%) and as regime-conditioned separate models (+6.70%, delta -0.08%). Regime split adds zero value. The relationship is structural, not regime-dependent. (Closed: 2026-07-24, D028)
+
+## Resolved
+
 - **GRU with squared lags** — TESTED (D027). GRU fails catastrophically (-37.11% held-out) even with same clean features Ridge succeeds on (+6.78%). GRU has its own training pathology, independent of feature quality. Closed. (Closed: 2026-07-23)
 
 - **Feature reformulation** — D026 showed Ridge with 12 squared lagged returns CRUSHES GARCH (+4-9% per fold, all CIs exclude 0, held-out confirmed at +6.78%). D027 confirmed the GRU can't exploit these features. Ridge with squared lags is the strong, verified baseline. (Closed: 2026-07-23)

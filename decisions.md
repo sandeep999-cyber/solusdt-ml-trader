@@ -348,3 +348,15 @@ Architecture and design choices with reasoning. One entry per real reversal or s
   - Modified `CausalWindowDataset.__getitem__()` to compute `sqrt(mean(tgt^2))` when `target_type="volatility"`, returning shape (1,) instead of (horizon,)
 - **Impact:** Existing runs unaffected (default is "return"). New volatility runs use `target_type: "volatility"` in config.
 - **Code:** `model/config/run_config.py`, `model/data/loader.py`.
+
+## D028: Regime features — clean negative
+- **Date:** 2026-07-24
+- **Context:** After testing order-flow, shock flags, polynomial expansion (all adding nothing to the +6.78% baseline), tested regime features. Defined regime as rolling realized-vol tercile (calm/normal/choppy), computed from 60-bar lookback with trailing 30-day cutoffs. Leakage verified: regime uses bars [t-60-30*24*60, t-60], features use [t-12, t-1], target uses [t+1, t+12].
+- **Regime distribution:** Calm 33.4%, Normal 33.0%, Choppy 33.6% (evenly balanced).
+- **Results:**
+  - Test A (regime dummies): +6.79% CI [+4.30, +9.26] — delta +0.01% vs baseline
+  - Test B (regime-conditioned models): +6.70% CI [+4.22, +9.16] — delta -0.08%
+  - Per-regime: calm +3.39%, normal +2.58%, choppy +4.04% (CIs all include 0, but combined does not)
+- **Conclusion:** Regime split adds zero value. The relationship between squared lags and volatility is the same across regimes. The signal is structural, not regime-dependent.
+- **Combined verdict on feature engineering:** Every expansion tested (order-flow, shock flags, polynomial, regime) either adds nothing or makes it slightly worse. Ridge + 12 squared lags (+6.78%) appears to be the ceiling for linear models on 1-min OHLCV data for 12-step volatility prediction.
+- **Code:** `scripts/regime_features.py`.

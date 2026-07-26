@@ -61,16 +61,16 @@ Auto-populated by `scripts/pull_checkpoint.py`. Each entry is a completed traini
 - **script:** scripts/volatility_ridge.py
 - **Target:** sqrt(mean(squared returns))
 - **Baseline RMSE:** 0.2517, **Model RMSE:** 0.2232
-- **Improvement:** +11.4%, CI [10.3, 12.4], **R²:** 0.068
+- **Improvement:** +11.4%, CI [10.3, 12.4], **R²:** 0.214
 - **Verdict:** Real signal for volatility. Pivot confirmed (D020).
 
 ## Volatility GRU h32 (H=12, 30 epochs)
 - **script:** scripts/volatility_gru_train.py
 - **Target:** sqrt(mean(squared returns)), MSE loss
 - **Baseline RMSE:** 0.2517, **GRU RMSE:** 0.2025
-- **Improvement:** +19.6%, CI [17.4, 21.7], **R²:** 0.233
+- **Improvement:** +19.6%, CI [17.4, 21.7], **R²:** 0.353
 - **GRU vs Ridge:** +9.2%, CI [7.5, 11.0]
-- **Verdict:** Nonlinear edge confirmed. GRU explains 23% of volatility variance. Best epoch: 26.
+- **Verdict:** Nonlinear edge confirmed. GRU explains 35% of volatility variance. Best epoch: 26.
 
 ---
 
@@ -87,3 +87,49 @@ Auto-populated by `scripts/pull_checkpoint.py`. Each entry is a completed traini
 | H=1,3,5,12 | Direction | LR | AUC<0.51 | 0.50 | ~0% | Dead |
 | **Vol Ridge** | **Volatility** | **Ridge** | **RMSE=0.223** | **0.252** | **+11.4%** | **Signal** |
 | **Vol GRU** | **Volatility** | **GRU h32** | **RMSE=0.203** | **0.252** | **+19.6%** | **Strong** |
+
+---
+
+## Walk-Forward Results (Volatility Task)
+
+### Ridge + 12 squared lagged returns (D026 — verified)
+| Fold | Improvement | 95% CI | alpha |
+|------|------------|--------|-------|
+| 1 | +8.71% | [+6.06, +11.31] | 183.3 |
+| 2 | +7.15% | [+4.75, +9.45] | 183.3 |
+| 3 | +4.12% | [+1.72, +6.56] | 183.3 |
+| 4 | +6.75% | [+4.29, +9.00] | 183.3 |
+| **Held-out** | **+6.78%** | **[+4.36, +9.08]** | **183.3** |
+
+### GRU + squared lags (D027 — Outcome B)
+| Fold | Improvement | 95% CI |
+|------|------------|--------|
+| 1 | -42.79% | [-48.54, -36.89] |
+| 2 | -95.49% | [-106.12, -84.78] |
+| 3 | -69.90% | [-81.44, -57.70] |
+| 4 | -57.90% | [-66.92, -48.56] |
+| **Held-out** | **-37.11%** | **[-40.40, -33.87]** |
+
+### Feature expansions (all from sq-lags baseline +6.78%)
+| Expansion | Held-out | CI | Delta |
+|-----------|----------|-----|-------|
+| + Order-flow (5 features) | +6.80% | [+4.37, +9.11] | +0.02% |
+| + Shock flag | +6.78% | [+4.36, +9.08] | +0.00% |
+| + Poly expansion (90 features) | +6.55% | [+4.11, +8.86] | -0.23% |
+| + Regime dummies (2 features) | +6.79% | [+4.30, +9.26] | +0.01% |
+| Regime-conditioned models | +6.70% | [+4.22, +9.16] | -0.08% |
+
+### Per-regime breakdown (separate Ridge models)
+| Regime | Improvement | CI | n_test |
+|--------|------------|-----|--------|
+| Calm (33.4%) | +3.39% | [-0.91, +7.67] | 1130 |
+| Normal (33.0%) | +2.58% | [-1.45, +6.56] | 1138 |
+| Choppy (33.6%) | +4.04% | [-0.77, +8.77] | 1098 |
+
+### GARCH(1,1) baseline (D024 — corrected)
+| Fold | Improvement | 95% CI |
+|------|------------|--------|
+| 1 | +4.79% | [+4.49, +5.11] |
+| 2 | +1.27% | [+0.95, +1.58] |
+| 3 | +1.19% | [+0.88, +1.52] |
+| 4 | +0.68% | [+0.38, +0.99] |
