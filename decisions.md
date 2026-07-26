@@ -266,7 +266,11 @@ Architecture and design choices with reasoning. One entry per real reversal or s
 - **Implications:** This changes the project direction. The problem is not "volatility is unpredictable" (EMH-consistent). The problem is "the 10 engineered features don't capture the autocorrelation structure that GARCH exploits." This points at feature engineering or a different model class that uses raw returns, not the current 10-feature set.
 - **Code:** `scripts/garch_baseline.py`.
 
-## D025: Ridge+lagged-returns — GARCH's edge is structural, not informational
+## D025: Ridge+lagged-returns — OVERTURNED by D026
+- **Date:** 2026-07-23
+- **Status:** OVERTURNED. D025 tested Ridge+raw-lagged-returns and concluded GARCH's edge was "structural." But GARCH autoregresses on *squared* returns, not raw returns. D026 tested Ridge+squared-lagged-returns and showed the edge IS informational — Ridge crushes GARCH. D025's conclusion was wrong because it used the wrong transform.
+- **Original finding (now superseded):** Ridge+12 raw lags made Ridge worse (-6.70%, -14.91%). Concluded GARCH's edge was structural, not informational.
+- **Why it was wrong:** Raw signed returns test the wrong relationship. GARCH uses squared returns (shock magnitude). The correct test (D026) shows a linear model with squared lags outperforms GARCH.
 - **Date:** 2026-07-23
 - **Context:** D024 showed GARCH beats the constant-variance baseline (+0.68% to +4.79%). The natural next question: can a linear model recover GARCH's edge when given lagged returns as explicit features? This disambiguates "does the information help" from "does the architecture help."
 - **Setup:** Ridge with 22 features (12 lagged returns + 10 original), standardized, walk-forward 5-fold.
@@ -285,6 +289,24 @@ Architecture and design choices with reasoning. One entry per real reversal or s
   2. GARCH's edge comes from its *specific structural inductive bias* (squared-return feedback via alpha), not from "having access to returns." A linear model with the same information can't replicate it because the relationship is nonlinear and the model has no inductive bias for it.
 - **Implications:** The "feature reformulation" direction from D024 is unlikely to work by adding lagged returns alone. The problem isn't what information is available — it's that the models (Ridge, GRU) can't learn the specific nonlinear relationship that GARCH encodes by construction. GARCH works because it has the right equation structure, not because it has more or better information.
 - **Code:** `scripts/ridge_lagged_returns.py`.
+
+## D026: Squared-lagged-returns — GARCH's edge is informational, not structural
+- **Date:** 2026-07-23
+- **Context:** D025 concluded GARCH's edge was "structural" based on Ridge+raw-lags failing. But GARCH autoregresses on *squared* returns (shock magnitude), not raw returns (sign/direction). The correct test is Ridge with squared lags.
+- **Key finding:** Ridge with 12 squared lags ONLY (no original features) **crushes GARCH** in all folds:
+
+| Fold | GARCH | Ridge+squared (12 feat) | Ridge+squared+orig (34 feat) |
+|------|-------|------------------------|------------------------------|
+| 1 | +4.79% | **+8.71%** [+6.06, +11.31] | +0.52% |
+| 2 | +1.27% | **+7.15%** [+4.75, +9.45] | -4.81% |
+| 3 | +1.19% | **+4.12%** [+1.72, +6.56] | +5.55% |
+| 4 | +0.68% | **+6.75%** [+4.29, +9.00] | +5.25% |
+
+- **Multicollinearity diagnosis:** The original 22 features (including `norm_return`, `log_return`, `realized_vol`, etc.) were *hurting* via multicollinearity (condition number = inf for all variants). When removed, squared lags alone dominate GARCH by 2-6x.
+- **Why D025 was wrong:** Ridge+raw-lags tested whether a linear model can find GARCH's edge using *signed returns*. Of course it can't — the relationship is quadratic. The correct test (squared lags) shows the information IS accessible to a linear model with the right transform.
+- **Revised conclusion:** GARCH's edge is informational, not structural. A Ridge model with 12 squared lagged returns outperforms GARCH(1,1) in every fold. The information GARCH exploits (recent shock magnitudes predict future variance) is accessible to any model that sees squared returns. GARCH's specific recursive equation structure is not necessary — a linear model with the right features does better.
+- **Implications for the project:** The 10-feature set was the bottleneck, not the model class. The fix is feature engineering: add squared lagged returns. Ridge with 12 squared lags achieves +4-9% improvement with tight CIs. This is a viable baseline for the project.
+- **Code:** `scripts/ridge_squared_lags.py`.
 
 ## D021: Loader volatility target support
 - **Date:** 2026-07-23

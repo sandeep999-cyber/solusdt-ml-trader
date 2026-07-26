@@ -8,7 +8,7 @@ Format: one line per item. What's open, when it was raised, what would close it.
 
 ## Active
 
-- **Feature reformulation** — D025 showed adding lagged returns to Ridge doesn't help (makes it worse). The GRU already had sequential return information. GARCH's edge is structural (squared-return feedback), not informational. The 10-feature set and lagged returns both fail because Ridge/GRU can't learn the nonlinear relationship GARCH encodes by construction. Next: test whether a nonlinear model with GARCH-like inductive bias (e.g., neural GARCH, or a model that explicitly uses squared returns) can recover the edge while being trainable via gradient descent. (Raised: 2026-07-23, updated after D025)
+- **Feature reformulation** — D026 showed Ridge with 12 squared lagged returns CRUSHES GARCH (+4-9% per fold, all CIs exclude 0). The original 22 features were hurting via multicollinearity. Next: (1) test whether squared lags + selective original features (without collinear ones) improves further, (2) run GRU with squared lags as input to see if the nonlinear model can beat linear, (3) use this as the new baseline for the project. (Raised: 2026-07-23, updated after D026)
 
 - **Phase B reward design** — The {-1, 0, 1} decision head needs a cost-aware, abstention-biased reward (transaction costs subtracted, churn penalized, flat unpunished). No design exists yet. Close: write a `decisions.md` entry specifying the reward function, test it on synthetic data, and confirm it produces meaningful abstention. (Raised: 2026-07-20, still open)
 
